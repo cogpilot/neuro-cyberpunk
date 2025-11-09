@@ -1,0 +1,12 @@
+[submodule "deps/red4ext.sdk"]
+	path = deps/red4ext.sdk
+	url = https://github.com/WopsS/RED4ext.SDK.git
+[submodule "deps/redlib"]
+	path = deps/redlib
+	url = https://github.com/psiberx/cp2077-red-lib.git
+[submodule "deps/sharedpunk"]
+	path = deps/sharedpunk
+	url = https://github.com/alphanin9/SharedPunk.git
+[submodule "deps/libneurosdk"]
+	path = deps/libneurosdk
+	url = https://github.com/slendidev/libneurosdk.git

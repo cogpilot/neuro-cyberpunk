@@ -1,0 +1,11 @@
+#include <semver.hpp>
+
+namespace build 
+{
+constexpr semver::version<> GetModVersion()
+{
+    semver::version ver{};
+    semver::parse("${VERSION}", ver);
+    return ver;
+}
+}
