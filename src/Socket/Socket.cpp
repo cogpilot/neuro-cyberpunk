@@ -6,76 +6,113 @@
 
 namespace Capabilities
 {
-namespace SummonCar
-{
-char Name[] = "Summon car";
-char Desc[] = "Summon the last used vehicle to your location. This might not be possible depending on quest state.";
-char JsonSchema[] = "{}";
-
-constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
-} // namespace SummonCar
-
 namespace QueryWaypoints
 {
-char Name[] = "Query waypoints";
-char Desc[] =
+constexpr char Name[] = "Query waypoints";
+constexpr char Desc[] =
     R"(Query the available fast travel waypoints. Returns a JSON of {"name": WaypointName, "district": WaypointDistrict}.)";
-char JsonSchema[] = "{}";
+constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace QueryWaypoints
 
 namespace QueryQuestContext
 {
-char Name[] = "Query quest context";
-char Desc[] =
+constexpr char Name[] = "Query quest context";
+constexpr char Desc[] =
     R"(Query information about the currently tracked quest. Returns a JSON of {"name": QuestName, "desc": QuestDescription, "district": QuestDistrict}.)";
-char JsonSchema[] = "{}";
+constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace QueryQuestContext
 
+namespace QueryQuests
+{
+constexpr char Name[] = "Query all available quests";
+constexpr char Desc[] =
+    R"(Query information about all trackable quests. Returns a JSON list of {"id": QuestId, "name": QuestName, "desc": QuestDescription, "district": QuestDistrict}.)";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace QueryQuests
+
+namespace QueryInventory
+{
+constexpr char Name[] = "Query inventory";
+constexpr char Desc[] =
+    R"(Query information about the player inventory contents. Returns an array of {"name": ItemName, "type": ItemType, "quantity": ItemQuantity, "price": ItemPrice}. The list contains money as well.)";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace QueryInventory
+
+namespace QueryMoney
+{
+constexpr char Name[] = "Query money";
+constexpr char Desc[] = R"(Query information about the player's money. Returns the amount of money the player has.)";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace QueryMoney
+
+#pragma region Actions
 namespace DriveToDestination
 {
-char Name[] = "Drive to waypoint";
-char Desc[] =
+constexpr char Name[] = "Drive to waypoint";
+constexpr char Desc[] =
     R"(Toggle automatic driving to drive to a specific waypoint if the player is currently driving a vehicle. You can go to: 
 - a player defined waypoint (if present), 
 - a specific fast travel point, 
 - a random point in a district.)";
-char JsonSchema[] = R"({ "type": "object", "title": "DriveToDestination", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["player", "fasttravel", "district"] }, "target": { "description": "The selected destination. If destType == 'player', can be left empty. If destType == 'fasttravel', has to be the name of a fast travel point. If destType == 'district', has to be the name of a district.", "type": "string" } } })";
+constexpr char JsonSchema[] =
+    R"({ "type": "object", "title": "DriveToDestination", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["player", "fasttravel", "district"] }, "target": { "description": "The selected destination. If destType == 'player', can be left empty. If destType == 'fasttravel', has to be the name of a fast travel point. If destType == 'district', has to be the name of a district.", "type": "string" } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace DriveToDestination
 
 namespace SelectChoiceOption
 {
-char Name[] = "Select dialogue choice";
-char Desc[] =
+constexpr char Name[] = "Select dialogue choice";
+constexpr char Desc[] =
     R"(Select a dialogue choice option.
 Choice options are provided in a forced action context as a JSON array of {"option": StringOfDialogue, "id": ChoiceNumber}. 
 Choices may be timed.
 If a choice can run out of time, a <timeout> option is provided as the last item.
 Choices may affect the story.)";
-char JsonSchema[] = R"({ "type": "object", "title": "SelectChoiceOption", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
+constexpr char JsonSchema[] =
+    R"({ "type": "object", "title": "SelectChoiceOption", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectChoiceOption
 
 namespace RunQuickhackOnTarget
 {
-char Name[] = "Run a quickhack on a target";
-char Desc[] =
+constexpr char Name[] = "Run a quickhack on a target";
+constexpr char Desc[] =
     R"(Choose a quickhack to hack a target with. Targets can be enemies or inanimate objects.
 A list of quickhacks is provided in context as a JSON array of objects {"name": QuickhackName, "desc": QuickhackDescription, "id": QuickhackNumber}, 
 as well as information on the quickhack target. Quickhacks can only be performed when the scan menu is open and the player is looking at the target.)";
-char JsonSchema[] = R"({ "type": "object", "title": "SelectQuickhack", "properties": { "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } } })";
+constexpr char JsonSchema[] =
+    R"({ "type": "object", "title": "SelectQuickhack", "properties": { "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace RunQuickhackOnTarget
 
-neurosdk_action ActionsList[] = {SummonCar::Action,          QueryQuestContext::Action,  QueryWaypoints::Action,
-                                 DriveToDestination::Action, SelectChoiceOption::Action, RunQuickhackOnTarget::Action};
+namespace SummonCar
+{
+constexpr char Name[] = "Summon car";
+constexpr char Desc[] =
+    "Summon the last used vehicle to your location. This might not be possible depending on quest state.";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace SummonCar
+
+#pragma endregion
+
+neurosdk_action ActionsList[] = {QueryQuestContext::Action,  QueryQuests::Action,          QueryWaypoints::Action,
+                                 QueryInventory::Action,     QueryMoney::Action,           DriveToDestination::Action,
+                                 SelectChoiceOption::Action, RunQuickhackOnTarget::Action, SummonCar::Action};
 
 constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 
@@ -96,7 +133,8 @@ neuro::NeuroSocket::~NeuroSocket()
 
 bool neuro::NeuroSocket::RespondToAction(std::string_view aActionId, std::string_view aMsg)
 {
-    neurosdk_message_t msg{.kind = NeuroSDK_MessageKind_ActionResult,
+    neurosdk_message_t msg{
+        .kind = NeuroSDK_MessageKind_ActionResult,
         .value = {.action_result = {.id = aActionId.data(), .success = true, .message = aMsg.data()}}};
 
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
@@ -169,7 +207,9 @@ bool neuro::NeuroSocket::Initialize(NeuroActionProcessor aProcessor)
 
     m_callbackFunc = aProcessor;
 
-    return SendContext("You are playing Cyberpunk 2077, an action RPG. Commands will only give reasonable output once you are ingame.", true);
+    return SendContext(
+        "You are playing Cyberpunk 2077, an action RPG. Commands will only give reasonable output once you are ingame.",
+        true);
 }
 
 bool neuro::NeuroSocket::IsAlive()
