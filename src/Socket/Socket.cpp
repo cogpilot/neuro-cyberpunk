@@ -162,6 +162,7 @@ bool neuro::NeuroSocket::Tick()
         if (messageQueue[i].kind == NeuroSDK_MessageKind_Action)
         {
             m_callbackFunc(messageQueue[i].value.action, *this);
+            neurosdk_message_destroy(&messageQueue[i]);
         }
     }
 
