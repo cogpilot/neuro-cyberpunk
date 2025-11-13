@@ -4,11 +4,13 @@
 #include <string>
 #include <string_view>
 
+using namespace Red;
+
 namespace Capabilities
 {
 namespace QueryWaypoints
 {
-constexpr char Name[] = "Query waypoints";
+constexpr char Name[] = "query_waypoints";
 constexpr char Desc[] =
     R"(Query the available fast travel waypoints. Returns a JSON of {"name": WaypointName, "district": WaypointDistrict}.)";
 constexpr char JsonSchema[] = "{}";
@@ -18,7 +20,7 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 namespace QueryQuestContext
 {
-constexpr char Name[] = "Query quest context";
+constexpr char Name[] = "query_quest_context";
 constexpr char Desc[] =
     R"(Query information about the currently tracked quest. Returns a JSON of {"name": QuestName, "desc": QuestDescription, "district": QuestDistrict}.)";
 constexpr char JsonSchema[] = "{}";
@@ -28,7 +30,7 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 namespace QueryQuests
 {
-constexpr char Name[] = "Query all available quests";
+constexpr char Name[] = "query_all_quests";
 constexpr char Desc[] =
     R"(Query information about all trackable quests. Returns a JSON list of {"id": QuestId, "name": QuestName, "desc": QuestDescription, "district": QuestDistrict}.)";
 constexpr char JsonSchema[] = "{}";
@@ -38,7 +40,7 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 namespace QueryInventory
 {
-constexpr char Name[] = "Query inventory";
+constexpr char Name[] = "query_inventory";
 constexpr char Desc[] =
     R"(Query information about the player inventory contents. Returns an array of {"name": ItemName, "type": ItemType, "quantity": ItemQuantity, "price": ItemPrice}. The list contains money as well.)";
 constexpr char JsonSchema[] = "{}";
@@ -48,8 +50,8 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 namespace QueryMoney
 {
-constexpr char Name[] = "Query money";
-constexpr char Desc[] = R"(Query information about the player's money. Returns the amount of money the player has.)";
+constexpr char Name[] = "query_money";
+constexpr char Desc[] = R"(Query information about the player money amount. Returns the amount of money the player has.)";
 constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
@@ -58,21 +60,21 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 #pragma region Actions
 namespace DriveToDestination
 {
-constexpr char Name[] = "Drive to waypoint";
+constexpr char Name[] = "drive_to_waypoint";
 constexpr char Desc[] =
     R"(Toggle automatic driving to drive to a specific waypoint if the player is currently driving a vehicle. You can go to: 
 - a player defined waypoint (if present), 
 - a specific fast travel point, 
 - a random point in a district.)";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "title": "DriveToDestination", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["player", "fasttravel", "district"] }, "target": { "description": "The selected destination. If destType == 'player', can be left empty. If destType == 'fasttravel', has to be the name of a fast travel point. If destType == 'district', has to be the name of a district.", "type": "string" } } })";
+    R"({ "type": "object", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["player", "fasttravel", "district"] }, "target": { "description": "The selected destination. If destType == 'player', can be left empty. If destType == 'fasttravel', has to be the name of a fast travel point. If destType == 'district', has to be the name of a district.", "type": "string" } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace DriveToDestination
 
 namespace SelectChoiceOption
 {
-constexpr char Name[] = "Select dialogue choice";
+constexpr char Name[] = "select_dialogue_choice";
 constexpr char Desc[] =
     R"(Select a dialogue choice option.
 Choice options are provided in a forced action context as a JSON array of {"option": StringOfDialogue, "id": ChoiceNumber}. 
@@ -80,14 +82,14 @@ Choices may be timed.
 If a choice can run out of time, a <timeout> option is provided as the last item.
 Choices may affect the story.)";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "title": "SelectChoiceOption", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
+    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectChoiceOption
 
 namespace RunQuickhackOnTarget
 {
-constexpr char Name[] = "Run a quickhack on a target";
+constexpr char Name[] = "run_quickhack_on_target";
 constexpr char Desc[] =
     R"(Choose a quickhack to hack a target with. Targets can be enemies or inanimate objects.
 A list of quickhacks is provided in context as a JSON array of objects {"name": QuickhackName, "desc": QuickhackDescription, "id": QuickhackNumber}, 
@@ -100,7 +102,7 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 namespace SummonCar
 {
-constexpr char Name[] = "Summon car";
+constexpr char Name[] = "summon_car";
 constexpr char Desc[] =
     "Summon the last used vehicle to your location. This might not be possible depending on quest state.";
 constexpr char JsonSchema[] = "{}";
@@ -131,19 +133,33 @@ neuro::NeuroSocket::~NeuroSocket()
     }
 }
 
-bool neuro::NeuroSocket::RespondToAction(std::string_view aActionId, std::string_view aMsg)
+bool neuro::NeuroSocket::RespondToAction(StringView aActionId, StringView aMsg)
 {
     neurosdk_message_t msg{
         .kind = NeuroSDK_MessageKind_ActionResult,
-        .value = {.action_result = {.id = aActionId.data(), .success = true, .message = aMsg.data()}}};
+        .value = {.action_result = {.id = aActionId.Data(), .success = true, .message = aMsg.Data()}}};
 
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
 }
 
-bool neuro::NeuroSocket::SendContext(std::string_view aContext, bool aSilent)
+bool neuro::NeuroSocket::SendContext(StringView aContext, bool aSilent)
 {
     neurosdk_message_t msg{.kind = NeuroSDK_MessageKind_Context,
-                           .value = {.context = {.message = aContext.data(), .silent = aSilent}}};
+                           .value = {.context = {.message = aContext.Data(), .silent = aSilent}}};
+
+    return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
+}
+
+bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQuery, StringView aState)
+{
+    const char* tempActionNames[] = {aActionName.Data()};
+
+    neurosdk_message_t msg{.kind = NeuroSDK_MessageKind_ActionsForce,
+                           .value = {.actions_force = {.state = aState.Data(),
+                                                       .query = aQuery.Data(),
+                                                       .ephemeral_context = false,
+                                                       .action_names = tempActionNames,
+                                                       .action_names_len = 1}}};
 
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
 }
@@ -174,7 +190,7 @@ bool neuro::NeuroSocket::Initialize(NeuroActionProcessor aProcessor)
     // Note: this is a FPS and we're polling every frame (which we shouldn't do, but...)
     // We can't have poll timeout be more than ~10ms without rethinking architecture
     neurosdk_context_create_desc_t desc{.game_name = "Cyberpunk 2077",
-                                        .poll_ms = POLL_RATE_MS,
+                                        .poll_ms = PollRateMs,
                                         .flags = (neurosdk_context_create_flags_e)NEUROSDK_CONTEXT_CREATE_FLAGS_DEBUG,
                                         .callback_log = neuro::NeuroSocket::LogNeuro};
 
@@ -223,7 +239,8 @@ void neuro::NeuroSocket::LogNeuro(neurosdk_severity_e aSeverity, char* aMsg, voi
     switch (aSeverity)
     {
     case NeuroSDK_Severity_Debug:
-        Context::PluginLogger->DebugF(Context::PluginHandle, "[libneurosdk | Debug] %s", aMsg);
+        // Ignore debug prints for now, create too much spam in console
+        // Context::PluginLogger->DebugF(Context::PluginHandle, "[libneurosdk | Debug] %s", aMsg);
         break;
     case NeuroSDK_Severity_Info:
         Context::PluginLogger->InfoF(Context::PluginHandle, "[libneurosdk | Info] %s", aMsg);

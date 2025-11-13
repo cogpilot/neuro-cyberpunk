@@ -1,6 +1,10 @@
 #pragma once
 #include <neurosdk.h>
 
+#include <RED4ext/RED4ext.hpp>
+#include <RedLib.hpp>
+#include <RED4ext/StringView.hpp>
+
 namespace neuro {
 
     /*
@@ -9,11 +13,13 @@ namespace neuro {
     struct NeuroSocket {
         /**
          * \brief A callback function type for responding to Neuro's actions. This should always call RespondToAction() at *some* point.
+         * 
+         * Note: aAction is NOT owned by the receiving function and keeping pointers to strings in it is a bad idea.
          */
         using NeuroActionProcessor = void (*)(const neurosdk_message_action_t& aAction, NeuroSocket& aSocket);
 
         // How many milliseconds can we poll until we should quit?
-        static constexpr auto POLL_RATE_MS = 5;
+        static constexpr auto PollRateMs = 5;
 
         // Neuro API context
         neurosdk_context_t m_context;
@@ -30,7 +36,7 @@ namespace neuro {
         * 
         * \return The success of the operation.
         */
-        bool SendContext(std::string_view aContext, bool aSilent = false);
+        bool SendContext(Red::StringView aContext, bool aSilent = false);
 
         /**
         * \brief Respond to an action Neuro made. To prevent retries, the action is always marked as a success.
@@ -39,7 +45,18 @@ namespace neuro {
         * 
         * \return The success of the operation.
         */
-        bool RespondToAction(std::string_view aActionId, std::string_view aMsg);
+        bool RespondToAction(Red::StringView aActionId, Red::StringView aMsg);
+
+        /**
+         * \brief Send a message telling Neuro to do something.
+         * 
+         * \param aActionName The name of the action to take. We don't support multiple actions for this.
+         * \param aQuery A short description for what Neuro should do.
+         * \param aState A string describing the state of the game.
+         * 
+         * \return The success of the operation.
+         */
+        bool SendForcedAction(Red::StringView aActionName, Red::StringView aQuery, Red::StringView aState);
 
         /**
          * \brief Poll Neuro's socket and check for new messages.
