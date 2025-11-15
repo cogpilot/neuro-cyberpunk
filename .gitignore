@@ -370,7 +370,7 @@ wolvenkit/GraphEditorStates/
 
 # XMake directories
 .xmake/
-vsxmake2022/
+vsxmake*/
 build/
 
 # Packaging directories
