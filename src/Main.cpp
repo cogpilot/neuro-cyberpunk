@@ -8,12 +8,14 @@ using namespace Red;
 
 RED4EXT_C_EXPORT bool RED4EXT_CALL Main(PluginHandle aHandle, EMainReason aReason, const Sdk* aSdk)
 {
-    if(aReason == EMainReason::Load) {
+    if (aReason == EMainReason::Load)
+    {
         Context::PluginHandle = aHandle;
         Context::PluginSdk = aSdk;
         Context::PluginLogger = aSdk->logger;
 
         TypeInfoRegistrar::RegisterDiscovered();
+        CRTTISystem::Get()->AddPostRegisterCallback([]() { Context::m_rttiReady = true; });
     }
 
     return true;
@@ -21,8 +23,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(PluginHandle aHandle, EMainReason aReaso
 
 RED4EXT_C_EXPORT void RED4EXT_CALL Query(PluginInfo* aInfo)
 {
-    aInfo->name = L"Neuro-sama Interaction Driver";
-    aInfo->author = L"alphanine";
+    aInfo->name = build::ProjectName;
+    aInfo->author = build::AuthorName;
 
     constexpr auto ModVersion = build::GetModVersion();
 

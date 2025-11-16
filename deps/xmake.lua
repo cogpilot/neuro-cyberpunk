@@ -6,7 +6,7 @@ target("libneurosdk")
     set_languages("c17")
     add_defines(
         "NEUROSDK_BUILD_STATIC_LIB",
-        "LIB_VERSION=\"0.1.1\"", 
+        "LIB_VERSION=\"0.1.1\"",
         "_CRT_SECURE_NO_WARNINGS",
         "_CRT_RAND_S"
     )
@@ -14,7 +14,7 @@ target("libneurosdk")
     add_includedirs("libneurosdk/include")
     add_includedirs("libneurosdk/include", { public = true })
 
-    before_build(function(target)
+    on_load(function(target)
         -- Build system is a little cursed, so we replicate script logic :P
         -- Note: this doesn't build on macOS for some reason,
         -- works when I pin mongoose to branch that was used on last passing CI

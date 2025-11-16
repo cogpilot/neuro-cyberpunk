@@ -12,7 +12,7 @@ namespace QueryWaypoints
 {
 constexpr char Name[] = "query_waypoints";
 constexpr char Desc[] =
-    R"(Query the available fast travel waypoints. Returns a JSON of {"name": WaypointName, "district": WaypointDistrict}.)";
+    R"(Query the available map pins (fast travel waypoints, quest objectives, points of interest and so on). Returns a JSON list of {"id": WaypointId, "name": WaypointName, "type": WaypointType, "district": WaypointDistrict, "tracked": bool}. Only fast travel waypoints will have a specified district.)";
 constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
@@ -22,7 +22,7 @@ namespace QueryQuestContext
 {
 constexpr char Name[] = "query_quest_context";
 constexpr char Desc[] =
-    R"(Query information about the currently tracked quest. Returns a JSON of {"name": QuestName, "desc": QuestDescription, "district": QuestDistrict}.)";
+    R"(Query information about the currently tracked quest. Returns a description of the tracked quest with its name, type, current objectives and district.)";
 constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
@@ -32,7 +32,7 @@ namespace QueryQuests
 {
 constexpr char Name[] = "query_all_quests";
 constexpr char Desc[] =
-    R"(Query information about all trackable quests. Returns a JSON list of {"id": QuestId, "name": QuestName, "desc": QuestDescription, "district": QuestDistrict}.)";
+    R"(Query information about all active quests. Returns a list of quests with their names, types, current objectives and associated districts.)";
 constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};

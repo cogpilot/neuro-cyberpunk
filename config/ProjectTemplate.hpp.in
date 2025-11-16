@@ -1,6 +1,6 @@
 #include <semver.hpp>
 
-namespace build 
+namespace build
 {
 constexpr semver::version<> GetModVersion()
 {
@@ -8,4 +8,7 @@ constexpr semver::version<> GetModVersion()
     semver::parse("${VERSION}", ver);
     return ver;
 }
+
+inline constexpr auto AuthorName = L"${AUTHOR_NAME}";
+inline constexpr auto ProjectName = L"${NAME}";
 }

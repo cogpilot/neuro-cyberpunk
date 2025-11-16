@@ -1,5 +1,8 @@
 #include <Shared/Raw/Ink/InkSystem.hpp>
+#include <Shared/Raw/MappinSystem/MappinSystem.hpp>
+
 #include <System/NeuroSystem.hpp>
+#include <System/NativeResponses.hpp>
 
 using namespace Red;
 
@@ -50,6 +53,8 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
     JobQueue().Dispatch(
         [response = std::move(response)]()
         {
+            util::Timestamp startTime{};
+
             // Handle action
             switch (CNAME_HASH(response->m_actionName.c_str()))
             {
@@ -59,6 +64,27 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
+                break;
+            }
+            case CNAME_HASH("query_quest_context"):
+            {
+                if (!CallVirtual(GetInstance(), "OnQueryTrackedQuest", response->m_actionResponse))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
+            }
+            case CNAME_HASH("query_all_quests"):
+            {
+                if (!CallVirtual(GetInstance(), "OnQueryAllQuests", response->m_actionResponse))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
+            }
+            case CNAME_HASH("query_waypoints"):
+            {
+                response->m_actionResponse = NeuroResponses::CreateMappinQueryResponse();
                 break;
             }
             case CNAME_HASH("summon_car"):
@@ -78,6 +104,9 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
 
             // Add response to message queue
             GetInstance()->AddMessage(response);
+
+            Context::Spew("Action '{}' handled in {} ms", response->m_actionName.c_str(),
+                          startTime.TimePassedMs().count());
         });
 }
 
@@ -100,6 +129,8 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
         {
             std::unique_lock lock(m_socketLock);
 
+            auto firstTick = !m_neuroSocket;
+
             if (!m_neuroSocket)
             {
                 if (m_failedToConnectBefore && m_lastRetryTime.TimePassed() <= RetryTimeSeconds)
@@ -112,6 +143,23 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
                     m_lastRetryTime = {};
                     m_failedToConnectBefore = true;
                     return;
+                }
+            }
+
+            // If it's the first tick after connection, inform Neuro about the game state and if she can make commands
+            if (firstTick)
+            {
+                if (!IsPreGame())
+                {
+                    SendContext("The game is currently ingame. Commands can be executed.");
+
+                    // For convenience, construct message and add to message queue on scripting side
+                    // Note: this might lag a bit due to sync call
+                    CallVirtual(this, "OnConnectedIngame");
+                }
+                else
+                {
+                    SendContext("The game is currently in the main menu. No commands can be executed.");
                 }
             }
 
@@ -173,6 +221,14 @@ mod::NeuroSystem* mod::NeuroSystem::GetInstance()
     return Instance::Instance;
 }
 
+void mod::NeuroSystem::TrackMappin(Handle<game::mappins::IMappin>& aMappin)
+{
+    auto mappinSystem = GetGameSystem<game::mappins::MappinSystem>();
+    auto mappinId = shared::raw::Mappin::MappinID(aMappin);
+
+    shared::raw::MappinSystem::TrackMappinByID(mappinSystem, mappinId);
+}
+
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
 {
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
@@ -182,7 +238,7 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
 
 std::uint32_t mod::NeuroSystem::OnBeforeGameSave(const JobGroup& aJobGroup, void* aMetadataObject)
 {
-    SendContextDirect("The game is being saved.");
+    SendContext("The game is being saved.");
 
     return 0u;
 }

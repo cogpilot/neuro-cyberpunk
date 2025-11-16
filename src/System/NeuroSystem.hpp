@@ -3,6 +3,8 @@
 #include <RED4ext/StringView.hpp>
 #include <RedLib.hpp>
 
+#include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
+
 #include <Socket/Socket.hpp>
 #include <Util/Time.hpp>
 
@@ -27,7 +29,7 @@ public:
 };
 
 /**
- * \brief A response to an action taken by Neuro. 
+ * \brief A response to an action taken by Neuro.
  */
 class NeuroActionResponseMessage : public NeuroMessage
 {
@@ -76,7 +78,8 @@ public:
     // The name of the action.
     Red::CString m_actionName{};
 
-    // The current state of the game (for instance, for the quickhack action - the quickhacks Neuro can do, their RAM costs, the player RAM)
+    // The current state of the game (for instance, for the quickhack action - the quickhacks Neuro can do, their RAM
+    // costs, the player RAM)
     Red::CString m_state{};
 
     // A short description of what Neuro should do.
@@ -94,7 +97,7 @@ public:
  * \brief Bridge between Neuro's backend and game. Keeps websocket alive and serves as interface for scripting API.
  */
 class NeuroSystem : public Red::IGameSystem
-{    
+{
 public:
     // If initial connection failed/we lost connection, retry every 5 seconds
     static constexpr util::Timestamp::Seconds RetryTimeSeconds{5};
@@ -120,7 +123,7 @@ public:
 #pragma region NeuroHandlers
     /**
      * \brief Handler for Neuro actions.
-     * 
+     *
      * \param aAction The action description sent by Neuro.
      * \param aSocket The socket object.
      */
@@ -146,10 +149,10 @@ public:
 
     /**
      * \brief Send context info to Neuro OUTSIDE OF THE MESSAGE QUEUE.
-     * 
+     *
      * This is not the recommended way and it is better to use the message queue.
      * Use this when there are no other options (for instance, the frame callback is not running)
-     * 
+     *
      * \param aContextInfo The specified context.
      */
     void SendContextDirect(Red::StringView aContextInfo);
@@ -171,9 +174,19 @@ public:
     bool IsPreGame();
 
     /**
-     * \brief Returns a pointer to the game system instance. Game systems are kept from the game's start until the end, so this is safe.
+     * \brief Returns a pointer to the game system instance. Game systems are kept from the game's start until the end,
+     * so this is safe.
      */
     static NeuroSystem* GetInstance();
+#pragma endregion
+
+#pragma region ScriptingUtils
+    /**
+     * \brief Track a mappin for Autodrive to work, as MappinSystem does not export a TrackMappin method for generic
+     * mappins OOTB and I don't believe this mod should do Codeware work.
+     * \param aMappin The mappin to track.
+     */
+    void TrackMappin(Red::Handle<Red::game::mappins::IMappin>& aMappin);
 #pragma endregion
 
 #pragma region Overrides
@@ -188,4 +201,4 @@ public:
     RTTI_IMPL_TYPEINFO(NeuroSystem);
     RTTI_IMPL_ALLOCATOR();
 };
-}
+} // namespace mod
