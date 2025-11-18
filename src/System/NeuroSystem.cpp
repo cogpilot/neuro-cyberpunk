@@ -1,10 +1,21 @@
 #include <Shared/Raw/Ink/InkSystem.hpp>
 #include <Shared/Raw/MappinSystem/MappinSystem.hpp>
 
-#include <System/NeuroSystem.hpp>
 #include <System/NativeResponses.hpp>
+#include <System/NeuroSystem.hpp>
+
+#include <glaze/glaze.hpp>
 
 using namespace Red;
+
+namespace Impl
+{
+struct DriveToWaypointJson
+{
+    std::string destType{};
+    std::string target{};
+};
+}
 
 /**
  * \brief Helper for switch() statements with strings.
@@ -93,6 +104,50 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
+                break;
+            }
+            case CNAME_HASH("drive_to_waypoint"):
+            {
+                // Note: first complex action that needs parsing JSON
+                Impl::DriveToWaypointJson json{};
+
+                // operator bool overload for glz::error_ctx returns true on failure!
+                if (glz::read_json(json, response->m_actionData.c_str()))
+                {
+                    response->m_actionResponse = "Failed to parse action data JSON.";
+                    break;
+                }
+
+                if (json.destType == "id")
+                {
+                    NewMappinID mappinId{};
+
+                    if (std::from_chars(json.target.c_str(), json.target.c_str() + json.target.size(), mappinId.value).ec != std::errc())
+                    {
+                        response->m_actionResponse = "Failed to parse mappin ID.";
+                        break;
+                    }
+
+                    if (!CallVirtual(GetInstance(), "OnAutodriveToMappin", response->m_actionResponse, mappinId))
+                    {
+                        response->m_actionResponse = "Failed to call responder method.";
+                    }
+                }
+                else if (json.destType == "district")
+                {
+                    CString districtName{json.target.c_str()};
+
+                    if (!CallVirtual(GetInstance(), "OnAutodriveToDistrict", response->m_actionResponse, districtName))
+                    {
+                        response->m_actionResponse = "Failed to call responder method.";
+                    }
+                }
+                else
+                {
+                    response->m_actionResponse = "Invalid destType provided.";
+                    break;
+                }
+
                 break;
             }
             default:
@@ -229,6 +284,31 @@ void mod::NeuroSystem::TrackMappin(Handle<game::mappins::IMappin>& aMappin)
     shared::raw::MappinSystem::TrackMappinByID(mappinSystem, mappinId);
 }
 
+void mod::NeuroSystem::InjectKeypress(EInputKey aKey)
+{
+    using namespace shared::raw::Ink;
+    auto& inkSystem = *InkSystem::Get();
+    SyntheticInputBuffer inputBuffer{};
+
+    RawInputData pressData{};
+
+    pressData.action = EInputAction::IACT_Press;
+    pressData.key = aKey;
+
+    inputBuffer.GetInputs().PushBack(pressData);
+    inkSystem.InjectSyntheticInput(inputBuffer);
+    
+    inputBuffer.GetInputs().Clear();
+
+    RawInputData releaseData{};
+
+    releaseData.action = EInputAction::IACT_Release;
+    releaseData.key = aKey;
+
+    inputBuffer.GetInputs().PushBack(releaseData);
+    inkSystem.InjectSyntheticInput(inputBuffer);
+}
+
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
 {
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
@@ -259,7 +339,12 @@ void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)
     Instance::Instance = this;
 }
 
-RTTI_DEFINE_CLASS(mod::NeuroSystem, { RTTI_METHOD(SendContext); });
+RTTI_DEFINE_CLASS(mod::NeuroSystem, {
+    RTTI_METHOD(SendContext);
+    RTTI_METHOD(TrackMappin);
+    RTTI_METHOD(InjectKeypress);
+});
+
 RTTI_DEFINE_CLASS(mod::NeuroMessage, { RTTI_ABSTRACT(); });
 RTTI_DEFINE_CLASS(mod::NeuroActionResponseMessage, { RTTI_PARENT(mod::NeuroMessage); });
 RTTI_DEFINE_CLASS(mod::NeuroContextMessage, { RTTI_PARENT(mod::NeuroMessage); });

@@ -12,7 +12,7 @@ namespace QueryWaypoints
 {
 constexpr char Name[] = "query_waypoints";
 constexpr char Desc[] =
-    R"(Query the available map pins (fast travel waypoints, quest objectives, points of interest and so on). Returns a JSON list of {"id": WaypointId, "name": WaypointName, "type": WaypointType, "district": WaypointDistrict, "tracked": bool}. Only fast travel waypoints will have a specified district.)";
+    R"(Query the available map pins (fast travel waypoints, quest objectives, points of interest and so on). Returns a JSON list of {"id", "name", "type", "district", "tracked", "distance"}. Only fast travel waypoints will have a specified district.)";
 constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
@@ -42,7 +42,7 @@ namespace QueryInventory
 {
 constexpr char Name[] = "query_inventory";
 constexpr char Desc[] =
-    R"(Query information about the player inventory contents. Returns an array of {"name": ItemName, "type": ItemType, "quantity": ItemQuantity, "price": ItemPrice}. The list contains money as well.)";
+    R"(Query information about the player inventory contents. Returns a description of the items the player currently has in their inventory, including their name, type, quality and cost.)";
 constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
@@ -51,7 +51,7 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 namespace QueryMoney
 {
 constexpr char Name[] = "query_money";
-constexpr char Desc[] = R"(Query information about the player money amount. Returns the amount of money the player has.)";
+constexpr char Desc[] = R"(Query information about the player's money. Returns the amount of money the player has.)";
 constexpr char JsonSchema[] = "{}";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
@@ -62,12 +62,9 @@ namespace DriveToDestination
 {
 constexpr char Name[] = "drive_to_waypoint";
 constexpr char Desc[] =
-    R"(Toggle automatic driving to drive to a specific waypoint if the player is currently driving a vehicle. You can go to: 
-- a player defined waypoint (if present), 
-- a specific fast travel point, 
-- a random point in a district.)";
+    R"(Toggle automatic driving to drive to a specific waypoint if the player is currently driving a vehicle. You can go to any point returned by query_waypoints or randomly select a fast travel waypoint in a district. )";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["player", "fasttravel", "district"] }, "target": { "description": "The selected destination. If destType == 'player', can be left empty. If destType == 'fasttravel', has to be the name of a fast travel point. If destType == 'district', has to be the name of a district.", "type": "string" } } })";
+    R"({ "type": "object", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["id", "district"] }, "target": { "description": "The selected destination. If destType == 'district', has to be one of the districts within query_waypoints. If destType == 'id', has to be one of the IDs returned by query_waypoints.", "type": "string" } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace DriveToDestination
@@ -92,7 +89,7 @@ namespace RunQuickhackOnTarget
 constexpr char Name[] = "run_quickhack_on_target";
 constexpr char Desc[] =
     R"(Choose a quickhack to hack a target with. Targets can be enemies or inanimate objects.
-A list of quickhacks is provided in context as a JSON array of objects {"name": QuickhackName, "desc": QuickhackDescription, "id": QuickhackNumber}, 
+A list of quickhacks is provided in context as a JSON array of objects {"name": QuickhackName, "desc": QuickhackDescription, "id": QuickhackNumber, "ramCost": QuickhackRamCost}, 
 as well as information on the quickhack target. Quickhacks can only be performed when the scan menu is open and the player is looking at the target.)";
 constexpr char JsonSchema[] =
     R"({ "type": "object", "title": "SelectQuickhack", "properties": { "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } } })";
@@ -122,6 +119,7 @@ constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 
 neuro::NeuroSocket::NeuroSocket()
     : m_context(nullptr)
+    , m_callbackFunc(nullptr)
 {
 }
 

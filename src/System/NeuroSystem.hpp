@@ -3,6 +3,8 @@
 #include <RED4ext/StringView.hpp>
 #include <RedLib.hpp>
 
+#include <RED4ext/Scripting/Natives/Generated/EInputAction.hpp>
+#include <RED4ext/Scripting/Natives/Generated/EInputKey.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
 
 #include <Socket/Socket.hpp>
@@ -178,6 +180,14 @@ public:
      * so this is safe.
      */
     static NeuroSystem* GetInstance();
+#pragma endregion
+
+#pragma region Debug
+    /**
+     * \brief TEST: inject a synthetic input into the ink system.
+     * Note: this is mostly for debugging purposes and for testing input injection for scene choice nodes.
+     */
+    void InjectKeypress(Red::EInputKey aKey);
 #pragma endregion
 
 #pragma region ScriptingUtils

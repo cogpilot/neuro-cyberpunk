@@ -7,6 +7,7 @@
 #include <System/NativeResponses.hpp>
 
 #include <RED4ext/Scripting/Natives/Generated/game/FastTravelPointData.hpp>
+#include <RED4ext/Scripting/Natives/Generated/game/JournalEntryState.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/JournalPath.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/JournalPointOfInterestMappin.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/JournalQuest.hpp>
@@ -54,6 +55,12 @@ DistrictNameMap GetCachedDistrictNames()
     return ret;
 }
 
+/**
+ * \brief Tries to get the name of a quest, point of interest or fast travel mappin.
+ *
+ * \param aMappin The target mappin.
+ * \return A localized name or an empty string in case of an error.
+ */
 CString GetMappinDisplayName(Handle<IMappin>& aMappin)
 {
     static auto Localization = shared::raw::Localization::LocalizationSystem::GetInstance();
@@ -69,19 +76,7 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
         return ret;
     }
 
-    if (const auto& fastTravelMapPin = Cast<FastTravelMappin>(aMappin))
-    {
-        const auto& pointData = shared::raw::FastTravelMappin::PointData::Ref(fastTravelMapPin);
-        CString displayName{};
-        TweakDB::Get()->TryGetValue({pointData->pointRecord, ".displayName"}, displayName);
-
-        StringView view = displayName;
-        CString ret{};
-
-        Localization->GetOnscreen(ret, view);
-
-        return ret;
-    }
+    const auto mappinPhase = shared::raw::Mappin::GetMappinPhase(aMappin);
 
     // Yoink from game
     switch (shared::raw::Mappin::GetMappinVariant(aMappin))
@@ -101,7 +96,7 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
     case game::data::MappinVariant::Zzz05_ApartmentToPurchaseVariant:
     case game::data::MappinVariant::Zzz12_WorldEncounterVariant:
     {
-        if (shared::raw::Mappin::GetMappinPhase(aMappin) == game::data::MappinPhase::UndiscoveredPhase)
+        if (mappinPhase == game::data::MappinPhase::UndiscoveredPhase)
         {
             return "Undiscovered gig";
         }
@@ -109,6 +104,25 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
     }
     default:
         break;
+    }
+
+    if (mappinPhase == game::data::MappinPhase::UndiscoveredPhase)
+    {
+        return "Undiscovered";
+    }
+
+    if (const auto& fastTravelMapPin = Cast<FastTravelMappin>(aMappin))
+    {
+        const auto& pointData = shared::raw::FastTravelMappin::PointData::Ref(fastTravelMapPin);
+        CString displayName{};
+        TweakDB::Get()->TryGetValue({pointData->pointRecord, ".displayName"}, displayName);
+
+        StringView view = displayName;
+        CString ret{};
+
+        Localization->GetOnscreen(ret, view);
+
+        return ret;
     }
 
     uint32_t pathHash{};
@@ -131,16 +145,32 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
             {
                 WeakHandle<JournalEntry> objEntry{};
                 shared::raw::JournalManager::GetParentEntry(journalManager, objEntry, weakEntry);
-                if (const auto entry = Cast<JournalQuestObjective>(objEntry.Lock()))
+                if (auto entry = Cast<JournalQuestObjective>(objEntry.Lock()))
                 {
+                    if (shared::raw::JournalManager::GetEntryState(journalManager, entry) ==
+                        game::JournalEntryState::Inactive)
+                    {
+                        return "Undiscovered quest...";
+                    }
                     WeakHandle<JournalEntry> objPhase{};
                     shared::raw::JournalManager::GetParentEntry(journalManager, objPhase, objEntry);
-                    if (const auto phase = Cast<JournalQuestPhase>(objPhase.Lock()))
+                    if (auto phase = Cast<JournalQuestPhase>(objPhase.Lock()))
                     {
+                        if (shared::raw::JournalManager::GetEntryState(journalManager, phase) ==
+                            game::JournalEntryState::Inactive)
+                        {
+                            return "Undiscovered quest...";
+                        }
                         WeakHandle<JournalEntry> objQuest{};
                         shared::raw::JournalManager::GetParentEntry(journalManager, objQuest, objPhase);
-                        if (const auto quest = Cast<JournalQuest>(objQuest.Lock()))
+                        if (auto quest = Cast<JournalQuest>(objQuest.Lock()))
                         {
+                            if (shared::raw::JournalManager::GetEntryState(journalManager, quest) ==
+                                game::JournalEntryState::Inactive)
+                            {
+                                return "Undiscovered quest...";
+                            }
+
                             auto& displayName = quest->title.unk08;
 
                             StringView view = displayName;
@@ -176,6 +206,11 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
 
                     if (const auto& quest = Cast<JournalQuest>(questEntry))
                     {
+                        if (shared::raw::JournalManager::GetEntryState(journalManager, questEntry) ==
+                            game::JournalEntryState::Inactive)
+                        {
+                            return "Undiscovered quest...";
+                        }
                         auto& displayName = quest->title.unk08;
 
                         StringView view = displayName;
@@ -197,7 +232,7 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
 /**
  * \brief A DTO object for easier handling of Glaze JSON library. Satisfies the schema:
  *
- * {"id": WaypointId, "name": WaypointName, "district": WaypointDistrict, "type": WaypointType, "tracked": bool}
+ * {"id", "name", "type", "district", "tracked", "distance"}
  */
 struct NeuroMappinData
 {
@@ -211,7 +246,9 @@ struct NeuroMappinData
 
     std::string type{};
 
-    bool tracked;
+    bool tracked{};
+
+    float distance{};
 };
 
 CString mod::NeuroResponses::CreateMappinQueryResponse()
@@ -242,21 +279,13 @@ CString mod::NeuroResponses::CreateMappinQueryResponse()
             continue;
         }
 
-        // Not sure if you can use non-static nodes for Autodrive
-        if (!shared::raw::Mappin::IsStatic(mappin))
-        {
-            continue;
-        }
-
-        // No point
-        if (shared::raw::Mappin::GetMappinPhase(mappin) == game::data::MappinPhase::CompletedPhase)
-        {
-            continue;
-        }
+        const auto mappinPhase = shared::raw::Mappin::GetMappinPhase(mappin);
 
         auto id = shared::raw::Mappin::MappinID::Ref(mappin);
 
-        NeuroMappinData mappinDataDto{.id = id.value, .name = Impl::GetMappinDisplayName(mappin).c_str()};
+        NeuroMappinData mappinDataDto{.id = id.value,
+                                      .name = Impl::GetMappinDisplayName(mappin).c_str(),
+                                      .distance = shared::raw::Mappin::Distance::Ref(mappin)};
 
         if (const auto& fastTravelMapPin = Cast<FastTravelMappin>(mappin))
         {
@@ -268,6 +297,11 @@ CString mod::NeuroResponses::CreateMappinQueryResponse()
             {
                 mappinDataDto.district = DistrictTDBIDToLocalizedNameMap.at(districtTdbid).c_str();
             }
+        }
+        else if (mappinPhase == game::data::MappinPhase::CompletedPhase || !shared::raw::Mappin::IsStatic(mappin))
+        {
+            // Hack: all fast travel mappins are in some weird state?
+            continue;
         }
 
         static auto MappinVariantEnum = GetEnum<game::data::MappinVariant>();
