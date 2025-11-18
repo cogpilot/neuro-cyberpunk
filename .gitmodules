@@ -9,4 +9,4 @@
 	url = https://github.com/alphanin9/SharedPunk.git
 [submodule "deps/libneurosdk"]
 	path = deps/libneurosdk
-	url = https://github.com/slendidev/libneurosdk.git
+	url = https://github.com/alphanin9/libneurosdk.git
