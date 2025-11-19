@@ -26,7 +26,7 @@ jobs:
           name: ${{env.PLUGIN_ARTIFACT_NAME}}
           github-token: ${{ secrets.GH_PAT }}
           path: plugin
-      - name: Download plugin artifact
+      - name: Download PDB artifact
         uses: actions/download-artifact@v5
         with:
           name: ${{env.PDB_ARTIFACT_NAME}}
