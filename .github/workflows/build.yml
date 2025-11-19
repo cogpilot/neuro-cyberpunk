@@ -3,6 +3,8 @@ name: Check build
 on:
   pull_request:
   push:
+    tags-ignore:
+      - '**'
 
 permissions:
   contents: read
