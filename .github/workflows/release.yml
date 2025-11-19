@@ -1,0 +1,38 @@
+name: Release on tag
+on:
+  create:
+    tags:
+      - v*.*.*
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  release:
+    # Note: build is not done on this workflow, so Windows is not needed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup env vars
+        run: |
+          COMMIT_SHA="$(git rev-parse --short $GITHUB_SHA)"
+          PLUGIN_ARTIFACT_NAME="NeuroInteractions_$COMMIT_SHA"
+          PDB_ARTIFACT_NAME="NeuroInteractionsPDB_$COMMIT_SHA"
+          PLUGIN_VERSION="$(git describe --exact-match --tags $GITHUB_SHA)"
+      - name: Download plugin artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{env.PLUGIN_ARTIFACT_NAME}}
+          github_token: ${{ secrets.GH_PAT }}
+          path: plugin
+      - name: Download plugin artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{env.PDB_ARTIFACT_NAME}}
+          github_token: ${{ secrets.GH_PAT }}
+          path: pdb
+      - name: Display structure of downloaded files
+        run: |
+          ls -R plugin
+          ls -R pdb
