@@ -61,5 +61,5 @@ jobs:
 
             ${{env.BUILD_SHA256}}
           files: |
-            NeuroInteractions_${env:NEURO_VERSION}.zip
-            NeuroInteractions_${env:NEURO_VERSION}_pdb.zip
+            NeuroInteractions_${{env:NEURO_VERSION}}.zip
+            NeuroInteractions_${{env:NEURO_VERSION}}_pdb.zip
