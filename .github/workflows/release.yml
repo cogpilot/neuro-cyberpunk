@@ -24,13 +24,13 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           name: ${{env.PLUGIN_ARTIFACT_NAME}}
-          github_token: ${{ secrets.GH_PAT }}
+          github-token: ${{ secrets.GH_PAT }}
           path: plugin
       - name: Download plugin artifact
         uses: actions/download-artifact@v5
         with:
           name: ${{env.PDB_ARTIFACT_NAME}}
-          github_token: ${{ secrets.GH_PAT }}
+          github-token: ${{ secrets.GH_PAT }}
           path: pdb
       - name: Display structure of downloaded files
         run: |
