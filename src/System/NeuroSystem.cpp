@@ -1,8 +1,10 @@
 #include <Shared/Raw/Ink/InkSystem.hpp>
 #include <Shared/Raw/MappinSystem/MappinSystem.hpp>
+#include <Shared/Raw/Player/Player.hpp>
 
 #include <System/NativeResponses.hpp>
 #include <System/NeuroSystem.hpp>
+
 
 #include <glaze/glaze.hpp>
 
@@ -286,27 +288,36 @@ void mod::NeuroSystem::TrackMappin(Handle<game::mappins::IMappin>& aMappin)
 
 void mod::NeuroSystem::InjectKeypress(EInputKey aKey)
 {
-    using namespace shared::raw::Ink;
-    auto& inkSystem = *InkSystem::Get();
-    SyntheticInputBuffer inputBuffer{};
+    auto player = shared::raw::PlayerManager::GetPlayerObject(GetGameSystem<game::PlayerManager>());
 
-    RawInputData pressData{};
+    if (!player)
+    {
+        Context::Spew("No player object found, cannot inject keypress.");
+        return;
+    }
 
-    pressData.action = EInputAction::IACT_Press;
-    pressData.key = aKey;
+    shared::raw::Ink::SyntheticInputBuffer buffer{};
 
-    inputBuffer.GetInputs().PushBack(pressData);
-    inkSystem.InjectSyntheticInput(inputBuffer);
+    shared::raw::Ink::RawInputData data{};
+
+    data.action = Red::EInputAction::IACT_Press;
+    data.key = aKey;
+    data.value = 1.f;
+    data.unk18 = 1; // Important!
+
+    buffer.GetInputs().PushBack(data);
+
+    // Make it click action?
+    data.action = Red::EInputAction::IACT_Release;
+
+    buffer.GetInputs().PushBack(data);
+
+    shared::raw::Player::ProcessInput(player, buffer);
+}
+
+void mod::NeuroSystem::InjectActionPress(CName aActionName, float aDurationSeconds)
+{
     
-    inputBuffer.GetInputs().Clear();
-
-    RawInputData releaseData{};
-
-    releaseData.action = EInputAction::IACT_Release;
-    releaseData.key = aKey;
-
-    inputBuffer.GetInputs().PushBack(releaseData);
-    inkSystem.InjectSyntheticInput(inputBuffer);
 }
 
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
@@ -343,6 +354,7 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(SendContext);
     RTTI_METHOD(TrackMappin);
     RTTI_METHOD(InjectKeypress);
+    RTTI_METHOD(InjectActionPress);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroMessage, { RTTI_ABSTRACT(); });

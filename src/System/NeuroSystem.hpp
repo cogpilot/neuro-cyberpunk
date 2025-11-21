@@ -188,6 +188,14 @@ public:
      * Note: this is mostly for debugging purposes and for testing input injection for scene choice nodes.
      */
     void InjectKeypress(Red::EInputKey aKey);
+
+    /**
+     * \brief Inject a synthetic input press into the input manager.
+     * 
+     * \param aActionName The action name to inject.
+     * \param aDurationSeconds How long the action should be held down.
+     */
+    void InjectActionPress(Red::CName aActionName, float aDurationSeconds);
 #pragma endregion
 
 #pragma region ScriptingUtils
