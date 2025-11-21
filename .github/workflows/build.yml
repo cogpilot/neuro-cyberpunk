@@ -1,0 +1,53 @@
+name: Check build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - '**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Create environment variables
+        run: |
+          $CommitSha = (git rev-parse --short $env:GITHUB_SHA)
+          echo "COMMIT_SHA=${CommitSha}" | Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
+
+      - name: Setup XMake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Update XMake repo
+        run: xmake.exe repo --update
+
+      - name: Configure XMake and install dependencies
+        run: xmake.exe config --yes
+
+      - name: Build and bundle with XMake
+        run: xmake.exe package
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeuroInteractions_${{ env.COMMIT_SHA }}
+          path: packaging/
+          if-no-files-found: error
+
+      - name: Upload PDB
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeuroInteractionsPDB_${{ env.COMMIT_SHA }}
+          path: packaging_pdb/
+          if-no-files-found: error

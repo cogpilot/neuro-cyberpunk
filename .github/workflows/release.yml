@@ -1,0 +1,65 @@
+name: Release new build
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Create environment variables
+        run: |
+          $VersionPrefix = "refs/tags/v"
+          $Version = $env:GITHUB_REF.Substring($versionPrefix.Length)
+          echo "NEURO_VERSION=${Version}" | Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
+
+      - name: Setup XMake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Update XMake repo
+        run: xmake.exe repo --update
+
+      - name: Configure XMake and install dependencies
+        run: xmake.exe config --yes
+
+      - name: Build and bundle with XMake
+        run: xmake.exe package
+
+      - name: Prepare ZIP
+        working-directory: ${{env.GITHUB_WORKSPACE}}
+        run: |
+          7z a NeuroInteractions_${env:NEURO_VERSION}.zip ./packaging/*
+          7z a NeuroInteractions_${env:NEURO_VERSION}_pdb.zip ./packaging_pdb/*
+
+      - name: Generate hash for release
+        working-directory: ${{env.GITHUB_WORKSPACE}}
+        run: |
+          $Digest = Get-FileHash -Algorithm SHA256 -Path NeuroInteractions_${env:NEURO_VERSION}.zip
+          $Digest | Format-List
+          $OnlyHash = $Digest | ForEach-Object { $_.Hash }
+          echo "BUILD_SHA256=${OnlyHash}" | Out-File -FilePath $env:GITHUB_ENV -Encoding UTF8 -Append
+
+      - name: Upload build to releases
+        uses: softprops/action-gh-release@v2.0.4
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        with:
+          append_body: true
+          body: |
+            **SHA256 of release**
+
+            ${{env.BUILD_SHA256}}
+          files: |
+            NeuroInteractions_${{env.NEURO_VERSION}}.zip
+            NeuroInteractions_${{env.NEURO_VERSION}}_pdb.zip
