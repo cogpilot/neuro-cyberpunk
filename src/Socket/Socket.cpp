@@ -74,12 +74,23 @@ namespace SelectChoiceOption
 constexpr char Name[] = "select_dialogue_choice";
 constexpr char Desc[] =
     R"(Select a dialogue choice option.
-Choice options are provided in a forced action context as a JSON array of {"option": StringOfDialogue, "id": ChoiceNumber}. 
+Choice options are provided in a forced action context as a JSON object with the approximate schema of
+{
+     hubId: int,
+     title: string,
+     choices: [{
+        id: int,
+        canInteract: bool,
+        isImportant: bool,
+        text: string
+     }],
+     isTimed: bool,
+     timeSeconds: float
+}. 
 Choices may be timed.
-If a choice can run out of time, a <timeout> option is provided as the last item.
 Choices may affect the story.)";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
+    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" }, "hubId": { "description": "The ID of the dialogue hub from the provided context.", "type": "integer" } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectChoiceOption

@@ -3,6 +3,8 @@
 #include <RedLib.hpp>
 #include <Shared/Util/NamePoolRegistrar.hpp>
 
+#include <fmt/format.h>
+
 namespace Context
 {
 // Plugin identifier
@@ -26,6 +28,6 @@ inline void Spew(std::string_view aStr, Args... aArgs)
     }
 
     Red::Log::Channel(shared::util::NamePoolRegistrar<"Neuro-sama Interactions Debug">::Get(),
-                      std::vformat(aStr, std::make_format_args(aArgs...)));
+                      fmt::vformat(aStr, fmt::make_format_args(aArgs...)));
 }
 } // namespace Context

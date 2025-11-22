@@ -6,10 +6,12 @@
 #include <RED4ext/Scripting/Natives/Generated/EInputAction.hpp>
 #include <RED4ext/Scripting/Natives/Generated/EInputKey.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
+#include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/ListChoiceHubData.hpp>
 
 #include <Socket/Socket.hpp>
 #include <Util/Time.hpp>
 
+#include <tsl/hopscotch_set.h>
 #include <neurosdk.h>
 
 namespace mod
@@ -101,6 +103,7 @@ public:
 class NeuroSystem : public Red::IGameSystem
 {
 public:
+#pragma region Connection
     // If initial connection failed/we lost connection, retry every 5 seconds
     static constexpr util::Timestamp::Seconds RetryTimeSeconds{5};
 
@@ -121,6 +124,12 @@ public:
 
     // Message queue for action responses ETC
     Red::DynArray<Red::Handle<NeuroMessage>> m_messageQueue{};
+#pragma endregion
+
+#pragma region SceneHandling
+    Red::SharedSpinLock m_choicehubLock{};
+    tsl::hopscotch_set<int> m_encounteredChoiceHubIDs{};
+#pragma endregion
 
 #pragma region NeuroHandlers
     /**
@@ -184,8 +193,10 @@ public:
 
 #pragma region Debug
     /**
-     * \brief TEST: inject a synthetic input into the ink system.
+     * \brief Inject a synthetic keypress into the input manager.
      * Note: this is mostly for debugging purposes and for testing input injection for scene choice nodes.
+     * 
+     * \param aKey The key to inject a press of.
      */
     void InjectKeypress(Red::EInputKey aKey);
 
@@ -205,6 +216,12 @@ public:
      * \param aMappin The mappin to track.
      */
     void TrackMappin(Red::Handle<Red::game::mappins::IMappin>& aMappin);
+
+    /**
+     * \brief Send Neuro scene list choice data upon its initial appearance. Deduplicated via choicehub IDs.
+     * \param aRef The list choice hub data reference.
+     */
+    void OnSceneListChoiceDataProvided(Red::ScriptRef<Red::game::interactions::vis::ListChoiceHubData>& aRef);
 #pragma endregion
 
 #pragma region Overrides

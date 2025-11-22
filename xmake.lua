@@ -13,7 +13,7 @@ set_optimize("fastest")
 set_runtimes("MD")
 add_cxxflags("/GR-")
 
-add_requires("glaze", "hopscotch-map", "openssl", "safetyhook", "semver", "wil")
+add_requires("fmt", "glaze", "hopscotch-map", "openssl", "safetyhook", "semver", "wil")
 
 -- For libneurosdk
 includes("deps/xmake.lua")
@@ -32,7 +32,7 @@ target("NeuroInteractions")
     add_headerfiles("src/**.hpp")
     add_includedirs("src/")
     add_deps("cp2077-shared-data", "libneurosdk", "red4ext.sdk", "redlib")
-    add_packages("glaze", "hopscotch-map", "openssl", "safetyhook", "semver", "wil")
+    add_packages("fmt", "glaze", "hopscotch-map", "openssl", "safetyhook", "semver", "wil")
     add_syslinks("Version", "User32")
     add_defines("WINVER=0x0601", "WIN32_LEAN_AND_MEAN", "NOMINMAX")
     set_configdir("src")
