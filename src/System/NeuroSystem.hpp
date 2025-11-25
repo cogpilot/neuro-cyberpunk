@@ -5,14 +5,14 @@
 
 #include <RED4ext/Scripting/Natives/Generated/EInputAction.hpp>
 #include <RED4ext/Scripting/Natives/Generated/EInputKey.hpp>
-#include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/ListChoiceHubData.hpp>
+#include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
 
 #include <Socket/Socket.hpp>
 #include <Util/Time.hpp>
 
-#include <tsl/hopscotch_set.h>
 #include <neurosdk.h>
+#include <tsl/hopscotch_set.h>
 
 namespace mod
 {
@@ -54,6 +54,11 @@ public:
 
     void DispatchNeuroMessage(neuro::NeuroSocket& aSocket) override;
 
+    /**
+     * \brief Checks if this response is to a forced action.
+     */
+    bool IsResponseToForcedAction() const;
+
     RTTI_IMPL_TYPEINFO(NeuroActionResponseMessage);
     RTTI_IMPL_ALLOCATOR();
 };
@@ -66,6 +71,9 @@ class NeuroContextMessage : public NeuroMessage
 public:
     // The context message.
     Red::CString m_message{};
+
+    // Should the message be silent to Neuro
+    bool m_silent{false};
 
     void DispatchNeuroMessage(neuro::NeuroSocket& aSocket) override;
 
@@ -107,6 +115,9 @@ public:
     // If initial connection failed/we lost connection, retry every 5 seconds
     static constexpr util::Timestamp::Seconds RetryTimeSeconds{5};
 
+    // Delay between synthetic inputs
+    static constexpr float DelayBetweenInputs = 0.1f;
+
     // Lock to access Neuro socket
     Red::SharedSpinLock m_socketLock{};
 
@@ -118,12 +129,27 @@ public:
 
     // Last reconnection retry time if we don't have a socket
     util::Timestamp m_lastRetryTime{};
-
+#pragma region Messages
     // Lock for message queue
     Red::SharedSpinLock m_messageLock{};
 
     // Message queue for action responses ETC
     Red::DynArray<Red::Handle<NeuroMessage>> m_messageQueue{};
+
+    // Have we sent a forced action message?
+    // If so, drop all forced action messages until Neuro responds to the first one
+    bool m_hasSentForcedActionMessage{};
+#pragma endregion
+
+#pragma region Inputs
+    Red::SharedSpinLock m_inputLock{};
+
+    // Input seems to be registered once per frame + sometimes you need delay
+    Red::DynArray<Red::EInputKey> m_injectedKeyQueue{};
+
+    float m_inputTimer{};
+    std::uint32_t m_injectedKeyQueueIndex{};
+#pragma endregion
 #pragma endregion
 
 #pragma region SceneHandling
@@ -148,9 +174,15 @@ public:
 
     /**
      * \brief Tick function registered by the update registrar.
-     * \return The job queue provided to the game system for work.
+     * \param aJobQueue The job queue provided to the game system for work.
      */
     void Tick(Red::JobQueue& aJobQueue);
+
+    /**
+     * \brief Tick function registered by update registrar for draining user input.
+     * \param aFrameInfo The previous frame's information (frametime and whatnot)
+     */
+    void DrainInputQueue(Red::FrameInfo& aFrameInfo);
 
     /**
      * \brief Add a message for Neuro to the message queue.
@@ -195,14 +227,21 @@ public:
     /**
      * \brief Inject a synthetic keypress into the input manager.
      * Note: this is mostly for debugging purposes and for testing input injection for scene choice nodes.
-     * 
+     *
      * \param aKey The key to inject a press of.
      */
     void InjectKeypress(Red::EInputKey aKey);
 
     /**
-     * \brief Inject a synthetic input press into the input manager.
+     * \brief Inject a synthetic keypress chain into the input manager.
      * 
+     * \param aKeys The keys to inject in sequence.
+     */
+    void InjectKeypressChain(const Red::DynArray<Red::EInputKey>& aKeys);
+
+    /**
+     * \brief Inject a synthetic input press into the input manager.
+     *
      * \param aActionName The action name to inject.
      * \param aDurationSeconds How long the action should be held down.
      */

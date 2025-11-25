@@ -47,6 +47,12 @@ struct NeuroChoicehubDescJson
     bool isTimed{};
     float timeSeconds{};
 };
+
+struct NeuroPerformedChoiceJson
+{
+    int id{};
+    int hubId{};
+};
 } // namespace Impl
 
 /**
@@ -64,6 +70,12 @@ mod::NeuroSystem* Instance{};
 void mod::NeuroActionResponseMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
 {
     aSocket.RespondToAction(m_actionId, m_actionResponse);
+}
+
+bool mod::NeuroActionResponseMessage::IsResponseToForcedAction() const
+{
+    // Note: evil hardcode
+    return m_actionName == "select_dialogue_choice" || m_actionName == "run_quickhack_on_target";
 }
 
 void mod::NeuroContextMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
@@ -84,6 +96,14 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
     response->m_actionName = aAction.name;
     response->m_actionId = aAction.id;
     response->m_actionData = aAction.data;
+
+    // Check if this is a forced action response
+    std::unique_lock lock(GetInstance()->m_messageLock);
+    if (GetInstance()->m_hasSentForcedActionMessage && response->IsResponseToForcedAction())
+    {
+        // If it is, drop the flag so we can send new forced action messages
+        GetInstance()->m_hasSentForcedActionMessage = false;
+    }
 
     if (GetInstance()->IsPreGame())
     {
@@ -183,6 +203,29 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
 
                 break;
             }
+            case CNAME_HASH("select_dialogue_choice"):
+            {
+                Impl::NeuroPerformedChoiceJson json{};
+                // operator bool overload for glz::error_ctx returns true on failure!
+                if (glz::read_json(json, response->m_actionData.c_str()))
+                {
+                    response->m_actionResponse = "Failed to parse action data JSON.";
+                    break;
+                }
+
+                if (json.id < 0 || json.hubId < 0)
+                {
+                    response->m_actionResponse = "Invalid choice ID or hub ID provided.";
+                    break;
+                }
+
+                if (!CallVirtual(GetInstance(), "OnSelectDialogueChoice", response->m_actionResponse, json.hubId,
+                                 json.id))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
+            }
             default:
             {
                 response->m_actionResponse = "Sorry, this action is not implemented yet.";
@@ -221,6 +264,7 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
 
             if (!m_neuroSocket)
             {
+                // TODO: if we fail too often, send popup to game saying Neuro is unreachable and don't try to connect again?
                 if (m_failedToConnectBefore && m_lastRetryTime.TimePassed() <= RetryTimeSeconds)
                 {
                     return;
@@ -260,18 +304,81 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
                 return;
             }
 
-            DynArray<Handle<NeuroMessage>> messages{};
-            {
-                // Minimize lock hold time
-                std::unique_lock queueLock(m_messageLock);
-                messages = std::move(m_messageQueue);
-            }
+            // Drain message queue
+            std::unique_lock queueLock(m_messageLock);
 
-            for (auto& i : messages)
+            for (auto& i : m_messageQueue)
             {
+                if (const auto& asForced = Cast<NeuroForcedActionMessage>(i))
+                {
+                    // If we have already sent a forced action message, drop this one
+                    if (m_hasSentForcedActionMessage)
+                    {
+                        Context::Spew("Dropping forced action message '{}' as another one is pending response.",
+                                      asForced->m_actionName.c_str());
+                        continue;
+                    }
+                    m_hasSentForcedActionMessage = true;
+                }
+
                 i->DispatchNeuroMessage(*m_neuroSocket);
             }
+
+            m_messageQueue.Clear();
         });
+}
+
+void mod::NeuroSystem::DrainInputQueue(FrameInfo& aInfo)
+{
+    std::unique_lock lock(m_inputLock);
+
+    if (m_injectedKeyQueueIndex >= m_injectedKeyQueue.size)
+    {
+        if (m_injectedKeyQueue.size > 0u)
+        {
+            m_injectedKeyQueue.Clear();
+            m_injectedKeyQueueIndex = 0u;
+            m_inputTimer = 0.f;
+        }
+
+        return;
+    }
+
+    m_inputTimer += aInfo.deltaTime;
+
+    // Ignore timer for first input
+    if (m_inputTimer < DelayBetweenInputs && m_injectedKeyQueueIndex != 0u)
+    {
+        return;
+    }
+
+    m_inputTimer = 0.f;
+
+    auto key = m_injectedKeyQueue[m_injectedKeyQueueIndex];
+
+    auto player = shared::raw::PlayerManager::GetPlayerObject(GetGameSystem<game::PlayerManager>());
+
+    if (player)
+    {
+        shared::raw::Ink::SyntheticInputBuffer buffer{};
+        shared::raw::Ink::RawInputData data{};
+
+        data.action = Red::EInputAction::IACT_Press;
+        data.key = key;
+        data.value = 1.f;
+        data.unk18 = 1;
+
+        buffer.GetInputs().PushBack(data);
+
+        // Make it click action?
+        data.action = Red::EInputAction::IACT_Release;
+
+        buffer.GetInputs().PushBack(data);
+
+        shared::raw::Player::ProcessInput(player, buffer);
+    }
+
+    m_injectedKeyQueueIndex++;
 }
 
 void mod::NeuroSystem::AddMessage(const Handle<NeuroMessage>& aMsg)
@@ -319,31 +426,17 @@ void mod::NeuroSystem::TrackMappin(Handle<game::mappins::IMappin>& aMappin)
 
 void mod::NeuroSystem::InjectKeypress(EInputKey aKey)
 {
-    auto player = shared::raw::PlayerManager::GetPlayerObject(GetGameSystem<game::PlayerManager>());
+    std::unique_lock lock(m_inputLock);
+    m_injectedKeyQueue.PushBack(aKey);
+}
 
-    if (!player)
+void mod::NeuroSystem::InjectKeypressChain(const Red::DynArray<Red::EInputKey>& aKeys)
+{
+    std::unique_lock lock(m_inputLock);
+    for (auto key : aKeys)
     {
-        Context::Spew("No player object found, cannot inject keypress.");
-        return;
+        m_injectedKeyQueue.PushBack(key);
     }
-
-    shared::raw::Ink::SyntheticInputBuffer buffer{};
-
-    shared::raw::Ink::RawInputData data{};
-
-    data.action = Red::EInputAction::IACT_Press;
-    data.key = aKey;
-    data.value = 1.f;
-    data.unk18 = 1;
-
-    buffer.GetInputs().PushBack(data);
-
-    // Make it click action?
-    data.action = Red::EInputAction::IACT_Release;
-
-    buffer.GetInputs().PushBack(data);
-
-    shared::raw::Player::ProcessInput(player, buffer);
 }
 
 void mod::NeuroSystem::InjectActionPress(CName aActionName, float aDurationSeconds)
@@ -502,8 +595,8 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
                     }
                     else
                     {
-                        optionParts.push_back(
-                            fmt::format("[Not enough money! {} eddies needed, has {} eddies]", neededMoney, playerMoney));
+                        optionParts.push_back(fmt::format("[Not enough money! {} eddies needed, has {} eddies]",
+                                                          neededMoney, playerMoney));
                     }
                     break;
                 }
@@ -575,6 +668,9 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
     aRegistrar->RegisterUpdate(UpdateTickGroup::PreRenderUpdate, this, "NeuroSystem/Communicate",
                                [this](FrameInfo&, JobQueue& aJobQueue) { Tick(aJobQueue); });
+
+    aRegistrar->RegisterUpdate(UpdateTickGroup::PreBuckets, this, "NeuroSystem/DrainInput",
+                               [this](FrameInfo& aFrameInfo, JobQueue&) { DrainInputQueue(aFrameInfo); });
 }
 
 std::uint32_t mod::NeuroSystem::OnBeforeGameSave(const JobGroup& aJobGroup, void* aMetadataObject)
@@ -593,6 +689,12 @@ void mod::NeuroSystem::OnWorldDetached(world::RuntimeScene* aScene)
 {
     SendContextDirect(
         "The game world is being exited. Either a save is being loaded or the game is being exited to main menu.");
+
+    std::unique_lock sceneLock(m_choicehubLock);
+    m_encounteredChoiceHubIDs.clear();
+
+    std::unique_lock inputLock(m_inputLock);
+    m_injectedKeyQueue.Clear();
 }
 
 void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)
@@ -605,6 +707,7 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(TrackMappin);
     RTTI_METHOD(InjectKeypress);
     RTTI_METHOD(InjectActionPress);
+    RTTI_METHOD(InjectKeypressChain);
     RTTI_METHOD(OnSceneListChoiceDataProvided);
 });
 
