@@ -116,7 +116,11 @@ public:
     static constexpr util::Timestamp::Seconds RetryTimeSeconds{5};
 
     // Delay between synthetic inputs
-    static constexpr float DelayBetweenInputs = 0.1f;
+    static constexpr auto DelayBetweenInputs = 0.1f;
+
+    static constexpr auto MaxConnectionAttemptsForFirstConnection = 5;
+
+    static constexpr auto MaxKeepTrackOfForcedActions = 5.f;
 
     // Lock to access Neuro socket
     Red::SharedSpinLock m_socketLock{};
@@ -126,6 +130,15 @@ public:
 
     // Is this not the first connection?
     bool m_failedToConnectBefore{};
+
+    // Have we had a successful connection ever?
+    bool m_hasHadSuccessfulConnection{};
+
+    // Tries for first connection
+    int m_firstConnectionAttempts{};
+
+    // If we cannot establish a link to Neuro, disable further connection attempts
+    bool m_disableConnection{};
 
     // Last reconnection retry time if we don't have a socket
     util::Timestamp m_lastRetryTime{};
@@ -139,6 +152,7 @@ public:
     // Have we sent a forced action message?
     // If so, drop all forced action messages until Neuro responds to the first one
     bool m_hasSentForcedActionMessage{};
+    float m_forcedActionMessageTimer{};
 #pragma endregion
 
 #pragma region Inputs
@@ -174,9 +188,10 @@ public:
 
     /**
      * \brief Tick function registered by the update registrar.
+     * \param aFrameInfo The frame time information.
      * \param aJobQueue The job queue provided to the game system for work.
      */
-    void Tick(Red::JobQueue& aJobQueue);
+    void Tick(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
 
     /**
      * \brief Tick function registered by update registrar for draining user input.

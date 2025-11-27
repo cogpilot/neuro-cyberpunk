@@ -253,10 +253,12 @@ bool mod::NeuroSystem::InitializeConnection()
     return m_neuroSocket->Initialize(DispatchNeuroAction);
 }
 
-void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
+void mod::NeuroSystem::Tick(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
 {
+    const auto dt = aFrameInfo.deltaTime;
+
     aJobQueue.Dispatch(
-        [this](const JobGroup& aGroup)
+        [this, dt](const JobGroup& aGroup)
         {
             std::unique_lock lock(m_socketLock);
 
@@ -264,6 +266,23 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
 
             if (!m_neuroSocket)
             {
+                // Just in case: drain the message queue even if it cannot be served
+                std::unique_lock queueLock(m_messageLock);
+                m_messageQueue.Clear();
+
+                if (m_disableConnection)
+                {
+                    return;
+                }
+
+                if (!m_hasHadSuccessfulConnection &&
+                    m_firstConnectionAttempts >= MaxConnectionAttemptsForFirstConnection)
+                {
+                    Context::Spew("Maximum initial connection attempts to Neuro reached, not trying again.");
+                    m_disableConnection = true;
+                    return;
+                }
+
                 // TODO: if we fail too often, send popup to game saying Neuro is unreachable and don't try to connect again?
                 if (m_failedToConnectBefore && m_lastRetryTime.TimePassed() <= RetryTimeSeconds)
                 {
@@ -272,6 +291,11 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
 
                 if (!InitializeConnection())
                 {
+                    if (!m_hasHadSuccessfulConnection)
+                    {
+                        m_firstConnectionAttempts++;
+                    }
+
                     m_lastRetryTime = {};
                     m_failedToConnectBefore = true;
                     return;
@@ -281,6 +305,7 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
             // If it's the first tick after connection, inform Neuro about the game state and if she can make commands
             if (firstTick)
             {
+                m_hasHadSuccessfulConnection = true;
                 if (!IsPreGame())
                 {
                     SendContext("The game is currently ingame. Commands can be executed.");
@@ -307,6 +332,19 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
             // Drain message queue
             std::unique_lock queueLock(m_messageLock);
 
+            if (m_hasSentForcedActionMessage)
+            {
+                m_forcedActionMessageTimer += dt;
+
+                if (m_forcedActionMessageTimer >= MaxKeepTrackOfForcedActions)
+                {
+                    Context::Spew("Forcing reset of forced action message state after {} seconds.",
+                                  MaxKeepTrackOfForcedActions);
+                    m_hasSentForcedActionMessage = false;
+                    m_forcedActionMessageTimer = 0.f;
+                }
+            }
+
             for (auto& i : m_messageQueue)
             {
                 if (const auto& asForced = Cast<NeuroForcedActionMessage>(i))
@@ -319,6 +357,7 @@ void mod::NeuroSystem::Tick(JobQueue& aJobQueue)
                         continue;
                     }
                     m_hasSentForcedActionMessage = true;
+                    m_forcedActionMessageTimer = 0.f;
                 }
 
                 i->DispatchNeuroMessage(*m_neuroSocket);
@@ -667,7 +706,7 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
 {
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
     aRegistrar->RegisterUpdate(UpdateTickGroup::PreRenderUpdate, this, "NeuroSystem/Communicate",
-                               [this](FrameInfo&, JobQueue& aJobQueue) { Tick(aJobQueue); });
+                               [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue) { Tick(aFrameInfo, aJobQueue); });
 
     aRegistrar->RegisterUpdate(UpdateTickGroup::PreBuckets, this, "NeuroSystem/DrainInput",
                                [this](FrameInfo& aFrameInfo, JobQueue&) { DrainInputQueue(aFrameInfo); });
