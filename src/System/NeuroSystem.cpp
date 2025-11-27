@@ -53,6 +53,40 @@ struct NeuroPerformedChoiceJson
     int id{};
     int hubId{};
 };
+
+class NeuroQuickhackDto : public IScriptable
+{
+    CString m_quickhackName{};
+    CString m_quickhackDesc{};
+    CString m_quickhackCategory{};
+    CString m_quickhackStatus{};
+
+    int m_quickhackCost{};
+
+    float m_cooldown{};
+    float m_uploadTime{};
+
+    bool m_willReveal{};
+
+    RTTI_IMPL_TYPEINFO(NeuroQuickhackDto);
+    RTTI_IMPL_ALLOCATOR();
+};
+
+class NeuroQuickhackDataDto : public IScriptable
+{
+    ent::EntityID m_targetEntityId{};
+
+    CString m_targetName{};
+    CString m_faction{};
+
+    bool m_isHostile{};
+    bool m_isBoss{};
+
+    DynArray<Handle<NeuroQuickhackDto>> m_quickhacks{};
+
+    RTTI_IMPL_TYPEINFO(NeuroQuickhackDataDto);
+    RTTI_IMPL_ALLOCATOR();
+};
 } // namespace Impl
 
 /**
@@ -740,6 +774,26 @@ void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)
 {
     Instance::Instance = this;
 }
+
+RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDataDto, {
+    RTTI_PROPERTY(m_targetEntityId);
+    RTTI_PROPERTY(m_targetName);
+    RTTI_PROPERTY(m_faction);
+    RTTI_PROPERTY(m_isHostile);
+    RTTI_PROPERTY(m_isBoss);
+    RTTI_PROPERTY(m_quickhacks);
+});
+
+RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDto, {
+    RTTI_PROPERTY(m_quickhackName);
+    RTTI_PROPERTY(m_quickhackDesc);
+    RTTI_PROPERTY(m_quickhackCategory);
+    RTTI_PROPERTY(m_quickhackStatus);
+    RTTI_PROPERTY(m_quickhackCost);
+    RTTI_PROPERTY(m_cooldown);
+    RTTI_PROPERTY(m_uploadTime);
+    RTTI_PROPERTY(m_willReveal);
+});
 
 RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(SendContext);
