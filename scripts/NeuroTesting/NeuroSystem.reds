@@ -1,17 +1,25 @@
+
 public native class NeuroQuickhackDto {
+    public native let id: Int32;
     public native let quickhackName: String;
     public native let quickhackDesc: String;
     public native let quickhackCategory: String;
     public native let quickhackStatus: String;
-
     public native let quickhackCost: Int32;
     public native let cooldown: Float;
     public native let uploadTime: Float;
     public native let willReveal: Bool;
+    public native let canUse: Bool;
 }
 
 public native class NeuroQuickhackDataDto {
     public native let targetEntityId: EntityID;
+    public native let targetName: String;
+    public native let faction: String;
+    public native let isHostile: Bool;
+    public native let isBoss: Bool;
+    public native let isInanimate: Bool;
+    public native let ramAmount: Int32;
     public native let quickhacks: [ref<NeuroQuickhackDto>];
 }
 
@@ -24,7 +32,129 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func InjectKeypressChain(data: [EInputKey]) -> Void;
 
+    public native func HasForcedActionCooldown() -> Bool;
+
+    public native func OnQuickhackDataProvided(data: ref<NeuroQuickhackDataDto>);
+
     public cb func OnConnectedIngame() -> Void {
+    }
+
+    public cb func OnQuickhackTarget(entId: EntityID, hackId: Int32) -> String {
+        let ent = GameInstance.FindEntityByID(GetGameInstance(), entId);
+
+        if !IsDefined(ent) {
+            return "Failed to find entity!";
+        }
+
+        let asObject = ent as GameObject;
+
+        if !IsDefined(asObject) {
+            // Should never happen
+            return "Entity is not game object!";
+        }
+
+        if !asObject.IsQuickHackAble() {
+            return "Entity cannot be quickhacked!";
+        }
+
+        let player = GameInstance.GetPlayerSystem(GetGameInstance()).GetLocalPlayerControlledGameObject() as PlayerPuppet;
+
+        let quickhackActions: [ref<QuickhackData>];
+        // Note: very hacky
+
+        let asDevice = asObject as Device;
+        let asScriptedPuppet = asObject as ScriptedPuppet;
+        let asVehicle = asObject as VehicleObject;
+
+        if IsDefined(asDevice) {
+            if asDevice.m_isQhackUploadInProgerss && !asDevice.IsActionQueueEnabled() || asDevice.IsActionQueueFull() {
+                return "Device is already too hacked!";
+            }
+            let ctx = asDevice
+                .GetDevicePS()
+                .GenerateContext(
+                    gamedeviceRequestType.Remote,
+                    Device.GetInteractionClearance(),
+                    player,
+                    entId
+                );
+
+            let actions: [ref<DeviceAction>];
+            asDevice.GetDevicePS().GetRemoteActions(actions, ctx);
+            QuickHackableHelper
+                .TranslateActionsIntoQuickSlotCommands(actions, quickhackActions, asDevice, asDevice.GetDevicePS());
+        } else if IsDefined(asScriptedPuppet) {
+            let ctx = asScriptedPuppet
+                .GetPS()
+                .GenerateContext(
+                    gamedeviceRequestType.Remote,
+                    Device.GetInteractionClearance(),
+                    player,
+                    entId
+                );
+
+            let actionRecords: [wref<ObjectAction_Record>];
+            let puppetActions: [ref<PuppetAction>];
+
+            asScriptedPuppet.GetRecord().ObjectActions(actionRecords);
+            asScriptedPuppet.GetPS().GetAllChoices(actionRecords, ctx, puppetActions);
+            asScriptedPuppet
+                .TranslateChoicesIntoQuickSlotCommands(puppetActions, quickhackActions);
+        } else if IsDefined(asVehicle) {
+            if asVehicle.m_isQhackUploadInProgress && !asVehicle.IsActionQueueEnabled() || asVehicle.IsActionQueueFull() {
+                return "Vehicle is already too hacked!";
+            }
+
+            let ctx = asVehicle
+                .GetVehiclePS()
+                .GenerateContext(
+                    gamedeviceRequestType.Remote,
+                    Device.GetInteractionClearance(),
+                    player,
+                    entId
+                );
+
+            let actions: [ref<DeviceAction>];
+            asVehicle.GetVehiclePS().GetRemoteActions(actions, ctx);
+
+            QuickHackableHelper
+                .TranslateActionsIntoQuickSlotCommands(actions, quickhackActions, asVehicle, asVehicle.GetVehiclePS());
+        }
+
+        let sz = ArraySize(quickhackActions);
+
+        if sz < hackId {
+            return "Quickhack ID no longer present in list!";
+        }
+
+        let hack = quickhackActions[hackId];
+
+        if hack.m_isLocked {
+            return "Hack is locked and can\'t be used!";
+        }
+
+        if NotEquals(hack.m_actionState, EActionInactivityReson.Ready) {
+            return "Hack is not ready for use!";
+        }
+
+        let cmd = new QuickSlotCommandUsed();
+        cmd.action = hack.m_action;
+
+        player.QueueEventForEntityID(entId, cmd);
+
+        if player.GetTakeOverControlSystem().IsDeviceControlled() {
+            let hackUsed = new QhackExecuted();
+            player
+                .QueueEventForEntityID(
+                    player
+                        .GetTakeOverControlSystem()
+                        .GetControlledObject()
+                        .GetEntityID(),
+                    hackUsed
+                );
+        }
+
+        return s"Tried to dispatch quickhack \"\(GetLocalizedText(hack.m_title))\" to target!";
     }
 
     public cb func OnSelectDialogueChoice(hubId: Int32, id: Int32) -> String {
@@ -38,7 +168,7 @@ public native class NeuroSystem extends IGameSystem {
         let currentChoicehubId = blackboard.GetInt(uiInteractionsBlackboardID.ActiveChoiceHubID);
 
         if hubId != currentChoicehubId {
-            return "The current choice hub ID doesn't match the sent one!";
+            return "The current choice hub ID doesn\'t match the sent one!";
         }
 
         let currentChoiceId = blackboard.GetInt(uiInteractionsBlackboardID.SelectedIndex);
@@ -52,8 +182,8 @@ public native class NeuroSystem extends IGameSystem {
 
         let chain: [EInputKey];
         let abs = Abs(delta);
-        let i = 0; 
-        
+        let i = 0;
+
         while i < abs {
             ArrayPush(chain, usedKey);
             i += 1;
@@ -91,17 +221,7 @@ public native class NeuroSystem extends IGameSystem {
         }
 
         this.TrackMappin(mappin);
-
-        // Maybe this needs a delay?
-
-        /*let autodriveRequest = new EnableAutoDriveRequest();
-        autodriveRequest.isDelamain = false;
-
-        GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"AutoDriveSystem").QueueRequest(autodriveRequest);
-        */
-
-
-        vehicle.ForceBrakesUntilStoppedOrFor(2.00);
+        vehicle.KillNeurodrive();
 
         let aiCommand = new DriveToPointAutonomousUpdate();
 
@@ -110,14 +230,8 @@ public native class NeuroSystem extends IGameSystem {
         aiCommand.targetPosition = mappin.GetWorldPosition();
         aiCommand.minimumDistanceToTarget = 40;
         aiCommand.driveDownTheRoadIndefinitely = false;
-        
-        let cmd = aiCommand.CreateCmd();
 
-        let aiCommandEvent = new AICommandEvent();
-        aiCommandEvent.command = cmd;
-
-        vehicle.QueueEvent(aiCommandEvent);
-        vehicle.GetAIComponent().SetDriveToPointAutonomousUpdate(aiCommand);
+        vehicle.SetupNeurodrivePointToPoint(aiCommand);
 
         let warningMsg: SimpleScreenMessage;
         warningMsg.isShown = true;

@@ -14,6 +14,11 @@
 #include <neurosdk.h>
 #include <tsl/hopscotch_set.h>
 
+namespace Impl
+{
+class NeuroQuickhackDataDto;
+}
+
 namespace mod
 {
 /**
@@ -171,6 +176,10 @@ public:
     tsl::hopscotch_set<int> m_encounteredChoiceHubIDs{};
 #pragma endregion
 
+#pragma region QuickhackHandling
+    Red::EntityID m_quickhackActionTargetId{};
+#pragma endregion
+
 #pragma region NeuroHandlers
     /**
      * \brief Handler for Neuro actions.
@@ -249,7 +258,7 @@ public:
 
     /**
      * \brief Inject a synthetic keypress chain into the input manager.
-     * 
+     *
      * \param aKeys The keys to inject in sequence.
      */
     void InjectKeypressChain(const Red::DynArray<Red::EInputKey>& aKeys);
@@ -276,6 +285,19 @@ public:
      * \param aRef The list choice hub data reference.
      */
     void OnSceneListChoiceDataProvided(Red::ScriptRef<Red::game::interactions::vis::ListChoiceHubData>& aRef);
+
+    /**
+     * \brief Check if the forced action cooldown is active. Used for quickhack handling due to special handling of
+     * target ID. Provided to RTTI.
+     * \return Whether or not the forced action cooldown is active.
+     */
+    bool HasForcedActionCooldown();
+
+    /**
+     * \brief Dispatch new quickhack info to Neuro.
+     * \param aQuickhackInfo The available quickhack information gathered by script.
+     */
+    void OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo);
 #pragma endregion
 
 #pragma region Overrides

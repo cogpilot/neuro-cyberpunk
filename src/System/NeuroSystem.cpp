@@ -20,6 +20,54 @@ using namespace Red;
 
 namespace Impl
 {
+class NeuroQuickhackDto : public IScriptable
+{
+public:
+    int m_id{};
+
+    CString m_quickhackName{};
+    CString m_quickhackDesc{};
+    CString m_quickhackCategory{};
+    CString m_quickhackStatus{};
+
+    int m_quickhackCost{};
+
+    float m_cooldown{};
+    float m_uploadTime{};
+
+    bool m_willReveal{};
+    bool m_canUse{};
+
+    RTTI_IMPL_TYPEINFO(NeuroQuickhackDto);
+    RTTI_IMPL_ALLOCATOR();
+};
+
+class NeuroQuickhackDataDto : public IScriptable
+{
+public:
+    ent::EntityID m_targetEntityId{};
+
+    CString m_targetName{};
+    CString m_faction{};
+
+    // Are we currently in combat?
+    bool m_isHostile{};
+
+    // Is this a boss enemy?
+    bool m_isBoss{};
+
+    // Is this an enemy at all or just object?
+    bool m_isInanimate{};
+
+    // How much RAM do we have?
+    int m_ramAmount{};
+
+    DynArray<Handle<NeuroQuickhackDto>> m_quickhacks{};
+
+    RTTI_IMPL_TYPEINFO(NeuroQuickhackDataDto);
+    RTTI_IMPL_ALLOCATOR();
+};
+
 struct DriveToWaypointJson
 {
     std::string destType{};
@@ -54,38 +102,75 @@ struct NeuroPerformedChoiceJson
     int hubId{};
 };
 
-class NeuroQuickhackDto : public IScriptable
+struct NeuroQuickhackJson
 {
-    CString m_quickhackName{};
-    CString m_quickhackDesc{};
-    CString m_quickhackCategory{};
-    CString m_quickhackStatus{};
+    int id{};
 
-    int m_quickhackCost{};
+    bool canUse{};
 
-    float m_cooldown{};
-    float m_uploadTime{};
+    std::string name{};
+    std::string desc{};
+    std::string category{};
+    std::string status{};
 
-    bool m_willReveal{};
+    int ramCost{};
 
-    RTTI_IMPL_TYPEINFO(NeuroQuickhackDto);
-    RTTI_IMPL_ALLOCATOR();
+    float cooldown{};
+    float uploadTime{};
+
+    bool willReveal{};
 };
 
-class NeuroQuickhackDataDto : public IScriptable
+struct NeuroQuickhackDataJson
 {
-    ent::EntityID m_targetEntityId{};
+    std::string targetName{};
+    std::string faction{};
 
-    CString m_targetName{};
-    CString m_faction{};
+    int ramAmount{};
 
-    bool m_isHostile{};
-    bool m_isBoss{};
+    bool isInanimate{};
+    bool isHostile{};
+    bool isBoss{};
 
-    DynArray<Handle<NeuroQuickhackDto>> m_quickhacks{};
+    std::vector<NeuroQuickhackJson> quickhacks{};
 
-    RTTI_IMPL_TYPEINFO(NeuroQuickhackDataDto);
-    RTTI_IMPL_ALLOCATOR();
+    static NeuroQuickhackDataJson FromGame(Handle<NeuroQuickhackDataDto>& aData)
+    {
+        NeuroQuickhackDataJson json{};
+
+        json.targetName = aData->m_targetName.c_str();
+        json.faction = aData->m_faction.c_str();
+        json.ramAmount = aData->m_ramAmount;
+        json.isInanimate = aData->m_isInanimate;
+        json.isHostile = aData->m_isHostile;
+        json.isBoss = aData->m_isBoss;
+
+        for (const auto& quickhack : aData->m_quickhacks)
+        {
+            NeuroQuickhackJson quickhackJson{};
+
+            quickhackJson.id = quickhack->m_id;
+            quickhackJson.name = quickhack->m_quickhackName.c_str();
+            quickhackJson.desc = quickhack->m_quickhackDesc.c_str();
+            quickhackJson.category = quickhack->m_quickhackCategory.c_str();
+            quickhackJson.status = quickhack->m_quickhackStatus.c_str();
+
+            quickhackJson.ramCost = quickhack->m_quickhackCost;
+            quickhackJson.cooldown = quickhack->m_cooldown;
+            quickhackJson.uploadTime = quickhack->m_uploadTime;
+            quickhackJson.willReveal = quickhack->m_willReveal;
+            quickhackJson.canUse = quickhack->m_canUse;
+
+            json.quickhacks.push_back(std::move(quickhackJson));
+        }
+
+        return json;
+    }
+};
+
+struct NeuroQuickhackResponseJson
+{
+    int id{};
 };
 } // namespace Impl
 
@@ -260,6 +345,39 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 }
                 break;
             }
+            case CNAME_HASH("run_quickhack_on_target"):
+            {
+                Impl::NeuroQuickhackResponseJson json{};
+                // operator bool overload for glz::error_ctx returns true on failure!
+                if (glz::read_json(json, response->m_actionData.c_str()))
+                {
+                    response->m_actionResponse = "Failed to parse action data JSON.";
+                    break;
+                }
+
+                if (json.id < 0)
+                {
+                    response->m_actionResponse = "Invalid quickhack ID provided.";
+                    break;
+                }
+                
+                // Ugly code, but should avoid lock
+                EntityID targetId =
+                    InterlockedExchange64((volatile long long*)(&GetInstance()->m_quickhackActionTargetId.hash), 0LL);
+
+                if (!targetId)
+                {
+                    response->m_actionResponse = "No entity was specified as quickhack target. Did you skip the forced action?";
+                    break;
+                }
+
+                if (!CallVirtual(GetInstance(), "OnQuickhackTarget", response->m_actionResponse, targetId,
+                                 json.id))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
+            }
             default:
             {
                 response->m_actionResponse = "Sorry, this action is not implemented yet.";
@@ -300,9 +418,13 @@ void mod::NeuroSystem::Tick(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
 
             if (!m_neuroSocket)
             {
-                // Just in case: drain the message queue even if it cannot be served
-                std::unique_lock queueLock(m_messageLock);
-                m_messageQueue.Clear();
+                {
+                    // Just in case: drain the message queue even if it cannot be served
+                    // NOTE: without scope this WILL deadlock
+                    std::unique_lock queueLock(m_messageLock);
+                    m_messageQueue.Clear();
+                }
+                
 
                 if (m_disableConnection)
                 {
@@ -317,7 +439,8 @@ void mod::NeuroSystem::Tick(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
                     return;
                 }
 
-                // TODO: if we fail too often, send popup to game saying Neuro is unreachable and don't try to connect again?
+                // TODO: if we fail too often, send popup to game saying Neuro is unreachable and don't try to connect
+                // again?
                 if (m_failedToConnectBefore && m_lastRetryTime.TimePassed() <= RetryTimeSeconds)
                 {
                     return;
@@ -736,6 +859,40 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
     AddMessage(msg);
 }
 
+bool mod::NeuroSystem::HasForcedActionCooldown()
+{
+    // Uh, I don't think we can deadlock this?
+    std::unique_lock lock(m_messageLock);
+    return m_hasSentForcedActionMessage;
+}
+
+void mod::NeuroSystem::OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo)
+{
+    // Avoid pointless lock
+    InterlockedExchange64((volatile long long*)&m_quickhackActionTargetId.hash, aQuickhackInfo->m_targetEntityId.hash);
+
+    auto jsonData = Impl::NeuroQuickhackDataJson::FromGame(aQuickhackInfo);
+
+    auto msg = MakeHandle<NeuroForcedActionMessage>();
+
+    msg->m_query = "You can quickhack a target (enemy or object) using various hacks. The available hacks are "
+                   "provided, but only the "
+                   "hacks with canUse = true can be uploaded to the target. If you do not wish to quickhack the "
+                   "target, pass a negative number as the quickhack ID.";
+
+    std::string json{};
+
+    if (glz::write_json(jsonData, json))
+    {
+        return;
+    }
+
+    msg->m_state = json.c_str();
+    msg->m_actionName = "run_quickhack_on_target";
+
+    AddMessage(msg);
+}
+
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
 {
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
@@ -781,10 +938,13 @@ RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDataDto, {
     RTTI_PROPERTY(m_faction);
     RTTI_PROPERTY(m_isHostile);
     RTTI_PROPERTY(m_isBoss);
+    RTTI_PROPERTY(m_isInanimate);
+    RTTI_PROPERTY(m_ramAmount);
     RTTI_PROPERTY(m_quickhacks);
 });
 
 RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDto, {
+    RTTI_PROPERTY(m_id);
     RTTI_PROPERTY(m_quickhackName);
     RTTI_PROPERTY(m_quickhackDesc);
     RTTI_PROPERTY(m_quickhackCategory);
@@ -793,6 +953,7 @@ RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDto, {
     RTTI_PROPERTY(m_cooldown);
     RTTI_PROPERTY(m_uploadTime);
     RTTI_PROPERTY(m_willReveal);
+    RTTI_PROPERTY(m_canUse);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroSystem, {
@@ -802,6 +963,8 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(InjectActionPress);
     RTTI_METHOD(InjectKeypressChain);
     RTTI_METHOD(OnSceneListChoiceDataProvided);
+    RTTI_METHOD(HasForcedActionCooldown);
+    RTTI_METHOD(OnQuickhackDataProvided);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroMessage, { RTTI_ABSTRACT(); });
