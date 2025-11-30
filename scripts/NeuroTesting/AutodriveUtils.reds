@@ -1,3 +1,5 @@
+module Neuro
+
 @addField(VehicleObject)
 public let m_neurodriveAiCommand: ref<AIVehicleCommand>;
 

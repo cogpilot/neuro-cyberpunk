@@ -37,6 +37,20 @@ public native class NeuroSystem extends IGameSystem {
     public native func OnQuickhackDataProvided(data: ref<NeuroQuickhackDataDto>);
 
     public cb func OnConnectedIngame() -> Void {
+        let player = GameInstance.GetPlayerSystem(GetGameInstance()).GetLocalPlayerControlledGameObject();
+
+        // Should never happen
+        if !IsDefined(player) {
+            return;
+        }
+
+        let puppet = player as PlayerPuppet;
+        if !IsDefined(puppet) {
+            return;
+        }
+        
+        this.SendContext(puppet.GetNeuroPlayerContext());
+        this.SendContext(this.OnQueryAllQuests());
     }
 
     public cb func OnQuickhackTarget(entId: EntityID, hackId: Int32) -> String {
@@ -251,6 +265,27 @@ public native class NeuroSystem extends IGameSystem {
         return "Autodrive started.";
     }
 
+    public cb func OnAutodriveToTracked() -> String {
+        let mappinSystem = GameInstance.GetMappinSystem(GetGameInstance());
+        let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+
+        let trackedEntry = journalManager.GetTrackedEntry();
+
+        if IsDefined(trackedEntry) {
+            let phase = journalManager.GetParentEntry(trackedEntry);
+
+            if IsDefined(phase) {
+                let mappin = mappinSystem.GetMappinFromObjective(phase, trackedEntry);
+
+                if IsDefined(mappin) {
+                    return this.OnAutodriveToMappin(mappin.GetNewMappinID());
+                }
+            }
+        }
+
+        return this.OnAutodriveToMappin(mappinSystem.GetManuallyTrackedMappinID());
+    }
+
     public cb func OnAutodriveToDistrict(districtLocalizedName: String) -> String {
         let fastTravelSystem = GameInstance
             .GetScriptableSystemsContainer(GetGameInstance())
@@ -382,6 +417,34 @@ public native class NeuroSystem extends IGameSystem {
         }
 
         return data;
+    }
+
+    public func TranslateItemIdToNeuroDesc(owner: GameObject, id: ItemID) -> String {
+        let transactionSystem = GameInstance.GetTransactionSystem(GetGameInstance());
+
+        let itemData = transactionSystem.GetItemData(owner, id);
+
+        if !IsDefined(itemData) {
+            return "<undefined>";
+        }
+
+        let itemQuality = RPGManager.GetItemQuality(itemData);
+        let itemQualityStr = GetLocalizedText(UIItemsHelper.QualityToTierPlusString(itemQuality));
+
+        let displayName = GetLocalizedText(itemData.GetNameAsString());
+        let displayType = GetLocalizedTextByKey(itemData.GetLocalizedItemType());
+
+        let str = s"\(itemQualityStr) \(displayName), type \(displayType)";
+
+        if RPGManager.IsItemIconic(itemData) {
+            str += " (Iconic)";
+        }
+
+        if itemData.HasTag(n"Quest") {
+            str += " (Quest)";
+        }
+
+        return str;
     }
 }
 

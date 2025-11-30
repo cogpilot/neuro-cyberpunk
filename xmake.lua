@@ -1,4 +1,3 @@
-add_rules("plugin.compile_commands.autoupdate")
 set_project("NeuroInteractions")
 
 set_version("0.0.1", { build = "%y%m%d%H" })
@@ -24,87 +23,95 @@ includes("deps/sharedpunk/xmake.lua")
 local cp2077_path = os.getenv("CP2077_PATH")
 
 target("NeuroInteractions")
-    set_default(true)
-    set_kind("shared")
-    set_filename("NeuroInteractions.dll")
-    set_warnings("more")
-    add_files("src/**.cpp", "src/**.rc")
-    add_headerfiles("src/**.hpp")
-    add_includedirs("src/")
-    add_deps("cp2077-shared-data", "libneurosdk", "red4ext.sdk", "redlib")
-    add_packages("fmt", "glaze", "hopscotch-map", "openssl", "safetyhook", "semver", "wil")
-    add_syslinks("Version", "User32")
-    add_defines("WINVER=0x0601", "WIN32_LEAN_AND_MEAN", "NOMINMAX")
-    set_configdir("src")
-    add_configfiles("config/ProjectTemplate.hpp.in", { prefixdir = "Config" })
-    add_configfiles("config/ProjectMetadata.rc.in", { prefixdir = "Config" })
-    set_configvar("NAME", "NeuroInteractions")
-    set_configvar("DESC", "Neuro-sama bindings for Cyberpunk 2077")
-    set_configvar("AUTHOR_NAME", "alphanin9")
-    set_pcxxheader("src/Precompiled.hpp")
-    add_cxxflags("/Oi", "/Os")
-    set_rundir(path.join(cp2077_path, "bin", "x64"))
-    on_package(function(target)
-        os.rm("packaging/*")
-        os.rm("packaging_pdb/*")
+	set_default(true)
+	set_kind("shared")
+	set_filename("NeuroInteractions.dll")
+	set_warnings("more")
+	add_files("src/**.cpp", "src/**.rc")
+	add_headerfiles("src/**.hpp")
+	add_includedirs("src/")
+	add_deps("cp2077-shared-data", "libneurosdk", "red4ext.sdk", "redlib")
+	add_packages("fmt", "glaze", "hopscotch-map", "openssl", "safetyhook", "semver", "wil")
+	add_syslinks("Version", "User32")
+	add_defines("WINVER=0x0601", "WIN32_LEAN_AND_MEAN", "NOMINMAX")
+	set_configdir("src")
+	add_configfiles("config/ProjectTemplate.hpp.in", { prefixdir = "Config" })
+	add_configfiles("config/ProjectMetadata.rc.in", { prefixdir = "Config" })
+	set_configvar("NAME", "NeuroInteractions")
+	set_configvar("DESC", "Neuro-sama bindings for Cyberpunk 2077")
+	set_configvar("AUTHOR_NAME", "alphanin9")
+	set_pcxxheader("src/Precompiled.hpp")
+	add_cxxflags("/Oi", "/Os")
+	set_rundir(path.join(cp2077_path, "bin", "x64"))
+	on_package(function(target)
+		os.rm("packaging/*")
+		os.rm("packaging_pdb/*")
 
-        os.mkdir("packaging/red4ext/plugins/NeuroInteractions")
-        -- os.mkdir("packaging/red4ext/plugins/NeuroInteractions/Scripts")
-        -- os.mkdir("packaging/red4ext/plugins/NeuroInteractions/Tweaks")
+		os.mkdir("packaging/red4ext/plugins/NeuroInteractions")
+		-- os.mkdir("packaging/red4ext/plugins/NeuroInteractions/Scripts")
+		-- os.mkdir("packaging/red4ext/plugins/NeuroInteractions/Tweaks")
 
-        -- os.cp("LICENSE", "packaging/red4ext/plugins/NeuroInteractions")
-        -- os.cp("THIRDPARTY_LICENSES", "packaging/red4ext/plugins/NeuroInteractions")
+		-- os.cp("LICENSE", "packaging/red4ext/plugins/NeuroInteractions")
+		-- os.cp("THIRDPARTY_LICENSES", "packaging/red4ext/plugins/NeuroInteractions")
 
-        -- os.cp("wolvenkit/packed/archive/pc/mod/*", "packaging/red4ext/plugins/NeuroInteractions")
-        -- os.cp("scripts/*", "packaging/red4ext/plugins/NeuroInteractions/redscript")
-        -- os.cp("tweaks/*", "packaging/red4ext/plugins/NeuroInteractions/tweaks")
+		-- os.cp("wolvenkit/packed/archive/pc/mod/*", "packaging/red4ext/plugins/NeuroInteractions")
+		-- os.cp("scripts/*", "packaging/red4ext/plugins/NeuroInteractions/redscript")
+		-- os.cp("tweaks/*", "packaging/red4ext/plugins/NeuroInteractions/tweaks")
 
-        local target_file = target:targetfile()
+		local target_file = target:targetfile()
 
-        os.cp(target_file, "packaging/red4ext/plugins/NeuroInteractions")
-        os.mkdir("packaging_pdb/red4ext/plugins/NeuroInteractions")
+		os.cp(target_file, "packaging/red4ext/plugins/NeuroInteractions")
+		os.mkdir("packaging_pdb/red4ext/plugins/NeuroInteractions")
 
-        os.cp(path.join(
-            path.directory(target_file),
-            path.basename(target_file) .. ".pdb" -- Evil hack
-        ), "packaging_pdb/red4ext/plugins/NeuroInteractions")
-    end)
-    on_install(function(target)
-        local target_file = target:targetfile()
-        local plugin_folder = path.join(cp2077_path, "red4ext/plugins/NeuroInteractions/")
+		os.cp(
+			path.join(
+				path.directory(target_file),
+				path.basename(target_file) .. ".pdb" -- Evil hack
+			),
+			"packaging_pdb/red4ext/plugins/NeuroInteractions"
+		)
+	end)
+	on_install(function(target)
+		local target_file = target:targetfile()
+		local plugin_folder = path.join(cp2077_path, "red4ext/plugins/NeuroInteractions/")
 
-        os.mkdir(plugin_folder)
+		os.mkdir(plugin_folder)
 
-        os.cp(target_file, plugin_folder)
-        os.cp(path.join(
-            path.directory(target_file),
-            path.basename(target_file) .. ".pdb" -- Evil hack #2
-        ), plugin_folder)
+		os.cp(target_file, plugin_folder)
+		os.cp(
+			path.join(
+				path.directory(target_file),
+				path.basename(target_file) .. ".pdb" -- Evil hack #2
+			),
+			plugin_folder
+		)
 
-        cprint("${bright green}Installed plugin to " .. plugin_folder)
-    end)
-    on_run(function(target)
-        os.run(path.join(cp2077_path, "bin", "x64", "Cyberpunk2077.exe"))
-    end)
+		cprint("${bright green}Installed plugin to " .. plugin_folder)
+	end)
+	on_run(function(target)
+		os.run(path.join(cp2077_path, "bin", "x64", "Cyberpunk2077.exe"))
+	end)
 
 target("red4ext.sdk")
-    set_default(false)
-    set_kind("headeronly")
-    set_group("deps")
-    add_headerfiles("deps/red4ext.sdk/vendor/**.h")
-    add_headerfiles("deps/red4ext.sdk/include/**.hpp")
-    add_includedirs("deps/red4ext.sdk/vendor/", { public = true })
-    add_includedirs("deps/red4ext.sdk/include/", { public = true })
+	set_default(false)
+	set_kind("headeronly")
+	set_group("deps")
+	add_headerfiles("deps/red4ext.sdk/vendor/**.h")
+	add_headerfiles("deps/red4ext.sdk/include/**.hpp")
+	add_includedirs("deps/red4ext.sdk/vendor/", { public = true })
+	add_includedirs("deps/red4ext.sdk/include/", { public = true })
 
 target("redlib")
-    set_default(false)
-    set_kind("headeronly")
-    set_group("deps")
-    add_defines("NOMINMAX")
-    add_headerfiles("deps/redlib/vendor/**.hpp")
-    add_headerfiles("deps/redlib/include/**.hpp")
-    add_includedirs("deps/redlib/vendor/", { public = true })
-    add_includedirs("deps/redlib/include/", { public = true })
+	set_default(false)
+	set_kind("headeronly")
+	set_group("deps")
+	add_defines("NOMINMAX")
+	add_headerfiles("deps/redlib/vendor/**.hpp")
+	add_headerfiles("deps/redlib/include/**.hpp")
+	add_includedirs("deps/redlib/vendor/", { public = true })
+	add_includedirs("deps/redlib/include/", { public = true })
 
 add_rules("plugin.vsxmake.autoupdate")
+add_rules("plugin.compile_commands.autoupdate")
+
 set_policy("build.optimization.lto", true)

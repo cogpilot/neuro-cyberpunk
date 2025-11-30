@@ -314,6 +314,13 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                         response->m_actionResponse = "Failed to call responder method.";
                     }
                 }
+                else if (json.destType == "tracked")
+                {
+                    if (!CallVirtual(GetInstance(), "OnAutodriveToTracked", response->m_actionResponse))
+                    {
+                        response->m_actionResponse = "Failed to call responder method.";
+                    }
+                }
                 else
                 {
                     response->m_actionResponse = "Invalid destType provided.";

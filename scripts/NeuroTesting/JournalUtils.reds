@@ -1,6 +1,5 @@
 module Neuro
 
-
 @addMethod(JournalManager)
 // Get a quest's data in a LLM-friendly fashion.
 public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String {
@@ -116,4 +115,31 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
     }
 
     return baseData;
+}
+
+@wrapMethod(NewHudPhoneGameController)
+public final func PushSMSNotification(msgEntry: wref<JournalPhoneMessage>, opt action: ref<GenericNotificationBaseAction>) -> Void {
+    wrappedMethod(msgEntry, action);
+    let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+
+    let msgConversation = this.m_journalMgr.GetParentEntry(msgEntry) as JournalPhoneConversation;
+    let msgContact = this.m_journalMgr.GetParentEntry(msgConversation) as JournalContact;
+
+    let convoName = GetLocalizedText(msgConversation.GetTitle());
+    let contactName = msgContact.GetLocalizedName(journalManager);
+    let text = GetLocalizedText(msgEntry.GetText());
+
+    let str = s"New SMS message!\r\n**Sender**: \(contactName)\r\n**Convo name:** \(convoName)\r\n\(text)";
+
+    GameInstance.GetNeuroSystem().SendContext(str);
+}
+
+@wrapMethod(IncomingCallLogicController)
+public final func SetCallInfo(const contactName: script_ref<String>, contactEntry: wref<JournalContact>, journalMgr: wref<JournalManager>, isRejectable: Bool) -> Void {
+    wrappedMethod(contactName, contactEntry, journalMgr, isRejectable);
+
+    let name = Deref(contactName);
+    let str = s"\(name) is calling us! Can reject: \(isRejectable)";
+    
+    GameInstance.GetNeuroSystem().SendContext(str);
 }

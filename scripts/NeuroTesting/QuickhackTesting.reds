@@ -1,3 +1,4 @@
+module Neuro
 
 @wrapMethod(QuickhacksListGameController)
 protected cb func OnQuickhackStarted(value: ref<RevealInteractionWheel>) -> Bool {

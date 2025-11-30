@@ -48,6 +48,16 @@ constexpr char JsonSchema[] = "{}";
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace QueryInventory
 
+namespace QueryPlayerInfo
+{
+constexpr char Name[] = "query_player_info";
+constexpr char Desc[] =
+    R"(Query information about the player information. Returns a description of the current state of the player, including health, combat state and equipped items/cyberware.)";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace QueryPlayerInfo
+
 namespace QueryMoney
 {
 constexpr char Name[] = "query_money";
@@ -119,9 +129,10 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 #pragma endregion
 
-neurosdk_action ActionsList[] = {QueryQuestContext::Action,  QueryQuests::Action,          QueryWaypoints::Action,
-                                 QueryInventory::Action,     QueryMoney::Action,           DriveToDestination::Action,
-                                 SelectChoiceOption::Action, RunQuickhackOnTarget::Action, SummonCar::Action};
+neurosdk_action ActionsList[] = {QueryQuestContext::Action,  QueryQuests::Action,        QueryWaypoints::Action,
+                                 QueryInventory::Action,     QueryPlayerInfo::Action,    QueryMoney::Action,
+                                 DriveToDestination::Action, SelectChoiceOption::Action, RunQuickhackOnTarget::Action,
+                                 SummonCar::Action};
 
 constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 
