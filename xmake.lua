@@ -48,15 +48,8 @@ target("NeuroInteractions")
 		os.rm("packaging_pdb/*")
 
 		os.mkdir("packaging/red4ext/plugins/NeuroInteractions")
-		-- os.mkdir("packaging/red4ext/plugins/NeuroInteractions/Scripts")
-		-- os.mkdir("packaging/red4ext/plugins/NeuroInteractions/Tweaks")
-
-		-- os.cp("LICENSE", "packaging/red4ext/plugins/NeuroInteractions")
-		-- os.cp("THIRDPARTY_LICENSES", "packaging/red4ext/plugins/NeuroInteractions")
-
-		-- os.cp("wolvenkit/packed/archive/pc/mod/*", "packaging/red4ext/plugins/NeuroInteractions")
-		-- os.cp("scripts/*", "packaging/red4ext/plugins/NeuroInteractions/redscript")
-		-- os.cp("tweaks/*", "packaging/red4ext/plugins/NeuroInteractions/tweaks")
+		os.mkdir("packaging/red4ext/plugins/NeuroInteractions/Scripts")
+		os.cp("scripts/*", "packaging/red4ext/plugins/NeuroInteractions/Scripts")
 
 		local target_file = target:targetfile()
 
