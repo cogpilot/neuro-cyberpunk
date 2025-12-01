@@ -1,3 +1,5 @@
+module Neuro
+
 @addMethod(PlayerPuppet)
 public func GetNeuroPlayerContext() -> String {
     let statPoolSystem = GameInstance.GetStatPoolsSystem(GetGameInstance());
@@ -33,14 +35,14 @@ public func GetNeuroPlayerContext() -> String {
     if IsDefined(district) {
         let locked: ref<District> = district;
         
-        ArrayPush(stringBuilderList, s"The player is currently in \(GetLocalizedText(locked.GetDistrictRecord().LocalizedName()))");
+        ArrayPush(stringBuilderList, s"The player is currently in \(GetLocalizedText(locked.GetDistrictRecord().LocalizedName())).");
     }
 
     ArrayPush(stringBuilderList, s"The player has \(hp)/\(maxHp) health.");
 
     let gender = StrLower(NameToString(this.GetResolvedGenderName()));
 
-    ArrayPush(stringBuilderList, s"The player is \(gender)");
+    ArrayPush(stringBuilderList, s"The player is \(gender).");
 
     if this.IsInCombat() {
         ArrayPush(stringBuilderList, "The player is in combat.");
@@ -51,13 +53,13 @@ public func GetNeuroPlayerContext() -> String {
     let mountedVehicle = this.GetMountedVehicle();
 
     if IsDefined(mountedVehicle) {
-        if mountedVehicle.IsPlayerControlled() {
+        if mountedVehicle.IsPlayerDriver() {
             ArrayPush(stringBuilderList, "The player is driving a vehicle.");
         } else {
             ArrayPush(stringBuilderList, "The player is a passenger in a vehicle.");
         }
         
-        ArrayPush(stringBuilderList, s"The vehicle is a \(GetLocalizedText(mountedVehicle.GetDisplayName()))");
+        ArrayPush(stringBuilderList, s"The vehicle is a \(GetLocalizedText(mountedVehicle.GetDisplayName())).");
     } else {
         ArrayPush(stringBuilderList, "The player is not currently in a vehicle.");
     }
@@ -82,28 +84,32 @@ public func GetNeuroPlayerContext() -> String {
         }
     }
 
-    let str = "";
-
-    for i in stringBuilderList {
-        str += i;
-        str += "\r\n";
-    }
-
-    return str;
+    return StringUtils.BuildString(stringBuilderList, "\r\n");
 }
 
+// Note: this method was chosen because it runs a bit after player attaches
 @wrapMethod(PlayerPuppet)
-protected cb func OnGameAttached() -> Bool {
-    wrappedMethod();
+protected cb func OnGameLoadedFactReset(evt: ref<GameLoadedFactReset>) -> Bool {
+    wrappedMethod(evt);
 
     // Simplest way to do this
     let neuroSystem = GameInstance.GetNeuroSystem();
-    neuroSystem.OnConnectedIngame();
+    neuroSystem.SendPlayerInformation(this);
 }
+
+@addField(PlayerPuppet)
+private let m_informedNeuroOfDeath: Bool;
 
 @wrapMethod(PlayerPuppet)
 protected cb func OnDeath(evt: ref<gameDeathEvent>) -> Bool {
     wrappedMethod(evt);
+    // Not sure how this works with Second Heart
+    if this.m_informedNeuroOfDeath {
+        return true;
+    }
+
+    this.m_informedNeuroOfDeath = true;
+
     let stringBuilder: [String];
     ArrayPush(stringBuilder, "The player got flatlined! Commands will not give meaningful responses until a save is reloaded");
     if IsDefined(evt.instigator) {
@@ -118,12 +124,7 @@ protected cb func OnDeath(evt: ref<gameDeathEvent>) -> Bool {
         }
     }
 
-    let str = "";
-
-    for i in stringBuilder {
-        str += i;
-        str += "\r\n";
-    }
+    let str = StringUtils.BuildString(stringBuilder, "\r\n");
 
     GameInstance.GetNeuroSystem().SendContext(str);
 }
@@ -134,24 +135,72 @@ protected cb func OnMountingEvent(evt: ref<MountingEvent>) -> Bool {
 
     let stringBuilder: [String];
 
-    ArrayPush(stringBuilder, "The player is entering a vehicle.");
+    let isVehicle = Equals(gameMountingObjectType.Vehicle, evt.relationship.otherMountableType);
+    if isVehicle {
+        ArrayPush(stringBuilder, "The player is entering a vehicle.");
 
-    if VehicleComponent.IsDriverSlot(evt.request.lowLevelMountingInfo.slotId.id) {
-        ArrayPush(stringBuilder, "The player will be driving the vehicle.");
+        if VehicleComponent.IsDriverSlot(evt.request.lowLevelMountingInfo.slotId.id) {
+            ArrayPush(stringBuilder, "The player will be driving the vehicle.");
+        }
+
+        let str = StringUtils.BuildString(stringBuilder, "\r\n");
+
+        GameInstance.GetNeuroSystem().SendContext(str);
     }
-
-    let str = "";
-
-    for i in stringBuilder {
-        str += i;
-        str += "\r\n";
-    }
-
-    GameInstance.GetNeuroSystem().SendContext(str);
 }
 
 @wrapMethod(PlayerPuppet)
 protected cb func OnUnmountingEvent(evt: ref<UnmountingEvent>) -> Bool {
     wrappedMethod(evt);
-    GameInstance.GetNeuroSystem().SendContext("The player is leaving a vehicle.");
+
+    let isVehicle = Equals(gameMountingObjectType.Vehicle, evt.relationship.otherMountableType);
+
+    if isVehicle {
+        GameInstance.GetNeuroSystem().SendContext("The player is leaving a vehicle.");
+    }
+}
+
+@wrapMethod(PlayerPuppet)
+protected cb func OnCombatStateChanged(newState: Int32) -> Bool {
+    let isInCombat = newState == 1;
+
+    if NotEquals(this.m_inCombat, isInCombat) {
+        // State changed, inform
+        let neuroSystem = GameInstance.GetNeuroSystem();
+
+        if isInCombat {
+            neuroSystem.SendContext("The player has entered combat.");
+        } else {
+            neuroSystem.SendContext("The player has exited combat.");
+        }
+    }
+
+    wrappedMethod(newState);
+}
+
+@wrapMethod(ScriptedPuppet)
+protected cb func OnKillRewardEvent(evt: ref<KillRewardEvent>) -> Bool {
+    wrappedMethod(evt);
+
+    if IsDefined(this as PlayerPuppet) {
+        let lock: ref<GameObject> = evt.victim;
+
+        let asPuppet = lock as ScriptedPuppet;
+
+        if IsDefined(asPuppet) {
+            let affiliationName = "None";
+
+            if asPuppet.IsCivilian() {
+                affiliationName = "Civilian";
+            } else {
+                let affiliation = asPuppet.GetRecord().Affiliation();
+
+                if IsDefined(affiliation) {
+                    affiliationName = GetLocalizedText(LocKeyToString(affiliation.LocalizedName()));
+                }
+            }
+
+            GameInstance.GetNeuroSystem().SendContext(s"The player killed \(asPuppet.GetScannerName()) [affiliation: \(affiliationName)].");
+        }
+    }
 }

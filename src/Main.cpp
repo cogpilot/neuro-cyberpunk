@@ -14,6 +14,9 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(PluginHandle aHandle, EMainReason aReaso
         Context::PluginSdk = aSdk;
         Context::PluginLogger = aSdk->logger;
 
+        // Package whole mod into RED4ext plugin folder
+        aSdk->scripts->Add(aHandle, L"Scripts");
+
         TypeInfoRegistrar::RegisterDiscovered();
         CRTTISystem::Get()->AddPostRegisterCallback([]() { Context::m_rttiReady = true; });
     }

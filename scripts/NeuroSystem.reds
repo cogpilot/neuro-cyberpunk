@@ -1,4 +1,6 @@
 
+import Neuro.*
+
 public native class NeuroQuickhackDto {
     public native let id: Int32;
     public native let quickhackName: String;
@@ -23,8 +25,18 @@ public native class NeuroQuickhackDataDto {
     public native let quickhacks: [ref<NeuroQuickhackDto>];
 }
 
+public native class NeuroPhoneMessageDto {
+    public native let messageController: wref<IScriptable>;
+    public native let contact: String;
+    public native let convoNameIfApplicable: String;
+    public native let messageHistory: String;
+    public native let responseOptions: [String];
+}
+
 public native class NeuroSystem extends IGameSystem {
     public native func SendContext(msg: String) -> Void;
+
+    public native func SendContextSilent(msg: String) -> Void;
 
     public native func TrackMappin(mappin: ref<IMappin>) -> Void;
 
@@ -36,19 +48,33 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func OnQuickhackDataProvided(data: ref<NeuroQuickhackDataDto>);
 
+    public native func OnSMSMessageDataProvided(data: ref<NeuroPhoneMessageDto>);
+
+    public cb func OnConnectionFailure() -> Void {
+        GameInstance
+            .GetSystemRequestsHandler()
+            .RequestSystemNotificationGeneric(n"Neuro-NotifyBadConnectionTitle", n"Neuro-NotifyBadConnectionDesc");
+    }
+
     public cb func OnConnectedIngame() -> Void {
         let player = GameInstance.GetPlayerSystem(GetGameInstance()).GetLocalPlayerControlledGameObject();
 
         // Should never happen
         if !IsDefined(player) {
+            ModLog(n"Neuro", "OnConnectedIngame, player puppet is not defined!");
             return;
         }
 
         let puppet = player as PlayerPuppet;
         if !IsDefined(puppet) {
+            ModLog(n"Neuro", "OnConnectedIngame, player puppet is not PlayerPuppet!");
             return;
         }
-        
+
+        this.SendPlayerInformation(puppet);
+    }
+
+    public func SendPlayerInformation(puppet: ref<PlayerPuppet>) -> Void {
         this.SendContext(puppet.GetNeuroPlayerContext());
         this.SendContext(this.OnQueryAllQuests());
     }
@@ -235,32 +261,20 @@ public native class NeuroSystem extends IGameSystem {
         }
 
         this.TrackMappin(mappin);
-        vehicle.KillNeurodrive();
+        vehicle.KillNeurodrive(true);
 
         let aiCommand = new DriveToPointAutonomousUpdate();
 
         aiCommand.minSpeed = 5;
-        aiCommand.maxSpeed = 120;
+        aiCommand.maxSpeed = 170;
         aiCommand.targetPosition = mappin.GetWorldPosition();
         aiCommand.minimumDistanceToTarget = 40;
         aiCommand.driveDownTheRoadIndefinitely = false;
 
         vehicle.SetupNeurodrivePointToPoint(aiCommand);
 
-        let warningMsg: SimpleScreenMessage;
-        warningMsg.isShown = true;
-        warningMsg.duration = 2;
-        warningMsg.message = "NeuroDrive\u{2122} engaged. Stand back.";
-        warningMsg.type = SimpleMessageType.Vehicle;
-
-        GameInstance
-            .GetBlackboardSystem(GetGameInstance())
-            .Get(GetAllBlackboardDefs().UI_Notifications)
-            .SetVariant(
-                GetAllBlackboardDefs().UI_Notifications.WarningMessage,
-                ToVariant(warningMsg),
-                true
-            );
+        let announcerEvent = new NeurodriveAnnouncerEvent();
+        vehicle.QueueEvent(announcerEvent);
 
         return "Autodrive started.";
     }
@@ -419,7 +433,69 @@ public native class NeuroSystem extends IGameSystem {
         return data;
     }
 
-    public func TranslateItemIdToNeuroDesc(owner: GameObject, id: ItemID) -> String {
+    public cb func OnQueryPlayerInfo() -> String {
+        let player = GameInstance.GetPlayerSystem(GetGameInstance()).GetLocalPlayerControlledGameObject();
+
+        if !IsDefined(player) {
+            return "Failed to get player puppet!";
+        }
+
+        let puppet = player as PlayerPuppet;
+
+        if !IsDefined(puppet) {
+            return "Failed to get player puppet!";
+        }
+
+        return puppet.GetNeuroPlayerContext();
+    }
+
+    public cb func OnQueryInventory() -> String {
+        let uiInventorySystem = UIInventoryScriptableSystem.GetInstance(GetGameInstance());
+
+        let filteredTags = [n"HideInBackpackUI", n"SoftwareShard"];
+        let playerItemValues: [wref<IScriptable>];
+
+        uiInventorySystem.GetPlayerItemsMap().GetValues(playerItemValues);
+
+        let stringBuilder: [String];
+        ArrayPush(stringBuilder, this.OnQueryMoney());
+        ArrayPush(stringBuilder, "Inventory items:");
+
+        for itemWref in playerItemValues {
+            let item: ref<UIInventoryItem> = itemWref as UIInventoryItem;
+            if !item.HasAnyTag(filteredTags) && !ItemID.HasFlag(item.GetID(), gameEItemIDFlag.Preview) {
+                let itemStructure = ItemID.GetStructure(item.GetID());
+                let hasQuantity = NotEquals(itemStructure, gamedataItemStructure.Unique);
+
+                let itemQualityStr = item.GetQualityText();
+                let displayName = item.GetName();
+                let displayType = GetLocalizedTextByKey(item.GetItemData().GetLocalizedItemType());
+                let price = FloorF(item.GetSellPrice());
+
+                let str = s"\(itemQualityStr) \(displayName), type \(displayType), sell price \(price) \u{20ac}$\r\n";
+                let description = item.GetDescription();
+                if StrLen(description) > 0 {
+                    str += s"Description:\r\n\(GetLocalizedText(description))\r\n";
+                }
+
+                let gmplDescription = item.GetGameplayDescription();
+                if StrLen(gmplDescription) > 0 {
+                    str
+                        += s"Gameplay description:\r\n\(GetLocalizedText(gmplDescription))\r\n";
+                }
+
+                if hasQuantity {
+                    str += s"Quantity: \(item.GetQuantity(false))\r\n";
+                }
+
+                ArrayPush(stringBuilder, str);
+            }
+        }
+
+        return StringUtils.BuildString(stringBuilder, "\r\n");
+    }
+
+    public func TranslateItemIdToNeuroDesc(owner: ref<PlayerPuppet>, id: ItemID) -> String {
         let transactionSystem = GameInstance.GetTransactionSystem(GetGameInstance());
 
         let itemData = transactionSystem.GetItemData(owner, id);
@@ -428,19 +504,22 @@ public native class NeuroSystem extends IGameSystem {
             return "<undefined>";
         }
 
-        let itemQuality = RPGManager.GetItemQuality(itemData);
-        let itemQualityStr = GetLocalizedText(UIItemsHelper.QualityToTierPlusString(itemQuality));
+        let uiInventoryItemsManager = UIInventoryItemsManager
+            .Make(
+                owner,
+                transactionSystem,
+                UIScriptableSystem.GetInstance(GetGameInstance())
+            );
+        let uiItem = UIInventoryItem.Make(owner, itemData, uiInventoryItemsManager);
 
-        let displayName = GetLocalizedText(itemData.GetNameAsString());
+        let itemQualityStr = uiItem.GetQualityText();
+        let displayName = uiItem.GetName();
+
         let displayType = GetLocalizedTextByKey(itemData.GetLocalizedItemType());
 
         let str = s"\(itemQualityStr) \(displayName), type \(displayType)";
 
-        if RPGManager.IsItemIconic(itemData) {
-            str += " (Iconic)";
-        }
-
-        if itemData.HasTag(n"Quest") {
+        if uiItem.IsQuestItem() {
             str += " (Quest)";
         }
 
@@ -450,43 +529,4 @@ public native class NeuroSystem extends IGameSystem {
 
 @addMethod(GameInstance)
 public native static func GetNeuroSystem() -> ref<NeuroSystem>;
-
-@wrapMethod(SubtitleLineLogicController)
-public func SetLineData(lineData: script_ref<scnDialogLineData>) {
-    let lineDataDeref = Deref(lineData);
-    let speaker: ref<GameObject> = lineDataDeref.speaker;
-
-    if !IsDefined(speaker) || lineDataDeref.isPersistent {
-        wrappedMethod(lineData);
-        return;
-    }
-
-    let speakerName = lineDataDeref.speakerName;
-
-    if !IsStringValid(speakerName) {
-        speakerName = speaker.GetDisplayName();
-    }
-
-    let localizedSpeakerName = GetLocalizedText(speakerName);
-
-    let line = lineData.text;
-
-    if scnDialogLineData.HasKiroshiTag(lineDataDeref)
-        && this.IsKiroshiEnabled()
-        || scnDialogLineData.HasMothertongueTag(lineDataDeref) {
-        let displayText = lineDataDeref.GetDisplayText();
-
-        let nativeText = displayText.text;
-        // Not sure which one is correct here
-        let translated = displayText.postTranslatedText;
-
-        line = s"\(nativeText) [translation: \(translated)]";
-    }
-
-    let neuroContext = s"Dialogue: [Type \(lineDataDeref.type)] \(localizedSpeakerName) says \"\(line)\"";
-
-    GameInstance.GetNeuroSystem().SendContext(neuroContext);
-
-    wrappedMethod(lineData);
-}
 

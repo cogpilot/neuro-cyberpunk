@@ -42,6 +42,8 @@ protected cb func OnQuickhackStarted(value: ref<RevealInteractionWheel>) -> Bool
         if IsDefined(asNPC) {
             collectedHackData.isBoss = asNPC.IsBoss();
             collectedHackData.isHostile = asNPC.IsHostile();
+            collectedHackData.targetName = asNPC.GetScannerName();
+ 
             let affiliation = asNPC.GetRecord().Affiliation();
 
             if IsDefined(affiliation) {

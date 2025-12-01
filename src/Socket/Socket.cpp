@@ -105,6 +105,19 @@ constexpr char JsonSchema[] =
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectChoiceOption
 
+namespace SelectSMSResponse
+{
+constexpr char Name[] = "select_sms_message_choice";
+constexpr char Desc[] =
+    R"(Select a SMS message option.
+Choice options are provided in a forced action context.
+Choices may affect the story.)";
+constexpr char JsonSchema[] =
+    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected SMS message option from the provided options.", "type": "integer" } } })";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace SelectSMSResponse
+
 namespace RunQuickhackOnTarget
 {
 constexpr char Name[] = "run_quickhack_on_target";
@@ -129,10 +142,10 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 #pragma endregion
 
-neurosdk_action ActionsList[] = {QueryQuestContext::Action,  QueryQuests::Action,        QueryWaypoints::Action,
-                                 QueryInventory::Action,     QueryPlayerInfo::Action,    QueryMoney::Action,
-                                 DriveToDestination::Action, SelectChoiceOption::Action, RunQuickhackOnTarget::Action,
-                                 SummonCar::Action};
+neurosdk_action ActionsList[] = {QueryQuestContext::Action,    QueryQuests::Action,        QueryWaypoints::Action,
+                                 QueryInventory::Action,       QueryPlayerInfo::Action,    QueryMoney::Action,
+                                 DriveToDestination::Action,   SelectChoiceOption::Action, SelectSMSResponse::Action,
+                                 RunQuickhackOnTarget::Action, SummonCar::Action};
 
 constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 
@@ -185,6 +198,11 @@ bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQu
 
 bool neuro::NeuroSocket::Tick()
 {
+    if (!IsAlive())
+    {
+        return false;
+    }
+
     neurosdk_message_t* messageQueue{};
     int messageCount{};
     if (const auto status = neurosdk_context_poll(&m_context, &messageQueue, &messageCount); status != NeuroSDK_None)

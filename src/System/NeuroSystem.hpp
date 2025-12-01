@@ -17,6 +17,7 @@
 namespace Impl
 {
 class NeuroQuickhackDataDto;
+class NeuroPhoneMessageDto;
 }
 
 namespace mod
@@ -180,6 +181,11 @@ public:
     Red::EntityID m_quickhackActionTargetId{};
 #pragma endregion
 
+#pragma region SMSMessageHandling
+    Red::SharedSpinLock m_smsLock{};
+    Red::WeakHandle<Red::IScriptable> m_actionMessengerDialogViewController{};
+#pragma endregion
+
 #pragma region NeuroHandlers
     /**
      * \brief Handler for Neuro actions.
@@ -231,6 +237,14 @@ public:
      * \param aContextInfo The specified context.
      */
     void SendContext(const Red::CString& aContextInfo);
+
+    /**
+     * \brief Send context info to Neuro, but Neuro will not visibly react to this context. Useful for spammy stuff.
+     * This function is also exposed to RTTI.
+     *
+     * \param aContextInfo The specified context.
+     */
+    void SendContextSilent(const Red::CString& aContextInfo);
 #pragma endregion
 
 #pragma region Util
@@ -298,6 +312,17 @@ public:
      * \param aQuickhackInfo The available quickhack information gathered by script.
      */
     void OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo);
+
+    /**
+     * \brief Dispatch new phone message info to Neuro.
+     * \param aMessageInfo The available phone message information gathered by script.
+     */
+    void OnSMSMessageDataProvided(Red::Handle<Impl::NeuroPhoneMessageDto>& aMessageInfo);
+
+    /**
+     * \brief Reset the bad connection counter to allow retry for Neuro socket.
+     */
+    void ResetBadConnectionCounter();
 #pragma endregion
 
 #pragma region Overrides

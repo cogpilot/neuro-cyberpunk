@@ -68,6 +68,26 @@ public:
     RTTI_IMPL_ALLOCATOR();
 };
 
+class NeuroPhoneMessageDto : public IScriptable
+{
+public:
+    // Simplify handling
+    WeakHandle<IScriptable> m_messageController{};
+
+    CString m_contact{};
+    CString m_convoNameIfApplicable{};
+    CString m_messageHistory{};
+    DynArray<CString> m_responseOptions{};
+
+    RTTI_IMPL_TYPEINFO(NeuroPhoneMessageDto);
+    RTTI_IMPL_ALLOCATOR();
+};
+
+/**
+ * \brief For interop with Glaze JSON serialization/deserialization, as I'm not sure on being able to make REDengine types work with Glaze.
+ */
+namespace JSON
+{
 struct DriveToWaypointJson
 {
     std::string destType{};
@@ -172,6 +192,48 @@ struct NeuroQuickhackResponseJson
 {
     int id{};
 };
+
+struct NeuroSMSChoiceEntryJson
+{
+    int id{};
+    std::string text{};
+};
+
+struct NeuroSMSJson
+{
+    std::string contact{};
+    std::string convoNameIfApplicable{};
+    std::string chatHistory{};
+
+    std::vector<NeuroSMSChoiceEntryJson> choices{};
+
+    static NeuroSMSJson FromGame(Handle<NeuroPhoneMessageDto>& aData)
+    {
+        NeuroSMSJson ret{};
+
+        ret.contact = aData->m_contact.c_str();
+        ret.convoNameIfApplicable = aData->m_convoNameIfApplicable.c_str();
+        ret.chatHistory = aData->m_messageHistory.c_str();
+
+        for (auto i = 0u; i < aData->m_responseOptions.size; i++)
+        {
+            NeuroSMSChoiceEntryJson choice{};
+
+            choice.id = i;
+            choice.text = aData->m_responseOptions[i].c_str();
+
+            ret.choices.push_back(std::move(choice));
+        }
+
+        return ret;
+    }
+};
+
+struct NeuroSMSResponseJson
+{
+    int id{};
+};
+}
 } // namespace Impl
 
 /**
@@ -199,7 +261,7 @@ bool mod::NeuroActionResponseMessage::IsResponseToForcedAction() const
 
 void mod::NeuroContextMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
 {
-    aSocket.SendContext(m_message);
+    aSocket.SendContext(m_message, m_silent);
 }
 
 void mod::NeuroForcedActionMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
@@ -264,6 +326,22 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 }
                 break;
             }
+            case CNAME_HASH("query_player_info"):
+            {
+                if (!CallVirtual(GetInstance(), "OnQueryPlayerInfo", response->m_actionResponse))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
+            }
+            case CNAME_HASH("query_inventory"):
+            {
+                if (!CallVirtual(GetInstance(), "OnQueryInventory", response->m_actionResponse))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
+            }
             case CNAME_HASH("query_waypoints"):
             {
                 response->m_actionResponse = NeuroResponses::CreateMappinQueryResponse();
@@ -280,7 +358,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             case CNAME_HASH("drive_to_waypoint"):
             {
                 // Note: first complex action that needs parsing JSON
-                Impl::DriveToWaypointJson json{};
+                Impl::JSON::DriveToWaypointJson json{};
 
                 // operator bool overload for glz::error_ctx returns true on failure!
                 if (glz::read_json(json, response->m_actionData.c_str()))
@@ -331,7 +409,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("select_dialogue_choice"):
             {
-                Impl::NeuroPerformedChoiceJson json{};
+                Impl::JSON::NeuroPerformedChoiceJson json{};
                 // operator bool overload for glz::error_ctx returns true on failure!
                 if (glz::read_json(json, response->m_actionData.c_str()))
                 {
@@ -354,7 +432,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("run_quickhack_on_target"):
             {
-                Impl::NeuroQuickhackResponseJson json{};
+                Impl::JSON::NeuroQuickhackResponseJson json{};
                 // operator bool overload for glz::error_ctx returns true on failure!
                 if (glz::read_json(json, response->m_actionData.c_str()))
                 {
@@ -382,6 +460,31 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                                  json.id))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
+            }
+            case CNAME_HASH("select_sms_message_choice"):
+            {
+                Impl::JSON::NeuroSMSResponseJson json{};
+                // operator bool overload for glz::error_ctx returns true on failure!
+                if (glz::read_json(json, response->m_actionData.c_str()))
+                {
+                    response->m_actionResponse = "Failed to parse action data JSON.";
+                    break;
+                }
+
+                std::unique_lock lock(GetInstance()->m_smsLock);
+
+                if (auto locked = GetInstance()->m_actionMessengerDialogViewController.Lock())
+                {
+                    if (!CallVirtual(locked, "MakeSyntheticMessageResponse", response->m_actionResponse, json.id))
+                    {
+                        response->m_actionResponse = "Failed to call responder method.";
+                    }
+                }
+                else
+                {
+                    response->m_actionResponse = "Failed to obtain messenger dialog handle.";
                 }
                 break;
             }
@@ -441,7 +544,10 @@ void mod::NeuroSystem::Tick(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
                 if (!m_hasHadSuccessfulConnection &&
                     m_firstConnectionAttempts >= MaxConnectionAttemptsForFirstConnection)
                 {
+                    // NOTE: maybe make popup in game?
                     Context::Spew("Maximum initial connection attempts to Neuro reached, not trying again.");
+                    CallVirtual(this, "OnConnectionFailure");
+
                     m_disableConnection = true;
                     return;
                 }
@@ -608,6 +714,16 @@ void mod::NeuroSystem::SendContext(const CString& aContextInfo)
     AddMessage(msg);
 }
 
+void mod::NeuroSystem::SendContextSilent(const CString& aContextInfo)
+{
+    auto msg = MakeHandle<NeuroContextMessage>();
+
+    msg->m_message = aContextInfo;
+    msg->m_silent = true;
+
+    AddMessage(msg);
+}
+
 bool mod::NeuroSystem::IsPreGame()
 {
     auto handler = shared::raw::Ink::InkSystem::Get()->m_requestsHandler.Lock();
@@ -683,16 +799,21 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
 
     // Note: ChoiceTypeWrapper.IsType is just bitfield
 
-    Impl::NeuroChoicehubDescJson neuroContext{};
+    Impl::JSON::NeuroChoicehubDescJson neuroContext{};
 
-    neuroContext.title = aRef->title.c_str();
+    StringView titleView = aRef->title;
+    CString localizedTitle{};
+
+    LocalizationSystem->GetOnscreen(localizedTitle, titleView);
+
+    neuroContext.title = localizedTitle.c_str();
     neuroContext.hubId = aRef->id;
 
     for (auto it = 0u; it < aRef->choices.size; it++)
     {
         auto& entry = aRef->choices[it];
 
-        Impl::NeuroChoiceLineJson neuroChoiceInfo{};
+        Impl::JSON::NeuroChoiceLineJson neuroChoiceInfo{};
 
         std::vector<std::string> optionParts{};
 
@@ -829,7 +950,7 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
 
         neuroChoiceInfo.text = fmt::format("{}", fmt::join(optionParts, " "));
 
-        neuroContext.choices.push_back(neuroChoiceInfo);
+        neuroContext.choices.push_back(std::move(neuroChoiceInfo));
     }
 
     // Note: we ignore timed *choice options*, I don't think those are used
@@ -873,12 +994,12 @@ bool mod::NeuroSystem::HasForcedActionCooldown()
     return m_hasSentForcedActionMessage;
 }
 
-void mod::NeuroSystem::OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo)
+void mod::NeuroSystem::OnQuickhackDataProvided(Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo)
 {
     // Avoid pointless lock
     InterlockedExchange64((volatile long long*)&m_quickhackActionTargetId.hash, aQuickhackInfo->m_targetEntityId.hash);
 
-    auto jsonData = Impl::NeuroQuickhackDataJson::FromGame(aQuickhackInfo);
+    auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(aQuickhackInfo);
 
     auto msg = MakeHandle<NeuroForcedActionMessage>();
 
@@ -898,6 +1019,39 @@ void mod::NeuroSystem::OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackD
     msg->m_actionName = "run_quickhack_on_target";
 
     AddMessage(msg);
+}
+
+void mod::NeuroSystem::OnSMSMessageDataProvided(Handle<Impl::NeuroPhoneMessageDto>& aMessageInfo)
+{
+    std::unique_lock lock(m_smsLock);
+
+    m_actionMessengerDialogViewController = aMessageInfo->m_messageController;
+
+    auto jsonData = Impl::JSON::NeuroSMSJson::FromGame(aMessageInfo);
+
+    auto msg = MakeHandle<NeuroForcedActionMessage>();
+
+    msg->m_query = "You have options to reply to a phone message. The choices are provided in the action context. If you do not wish to reply to the message, pass -1 as the message ID.";
+
+    std::string json{};
+
+    if (glz::write_json(jsonData, json))
+    {
+        return;
+    }
+
+    msg->m_state = json.c_str();
+    msg->m_actionName = "select_sms_message_choice";
+
+    AddMessage(msg);
+}
+
+void mod::NeuroSystem::ResetBadConnectionCounter()
+{
+    std::unique_lock lock(m_socketLock);
+
+    m_disableConnection = false;
+    m_firstConnectionAttempts = 0;
 }
 
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
@@ -963,8 +1117,17 @@ RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDto, {
     RTTI_PROPERTY(m_canUse);
 });
 
+RTTI_DEFINE_CLASS(Impl::NeuroPhoneMessageDto, {
+    RTTI_PROPERTY(m_messageController);
+    RTTI_PROPERTY(m_contact);
+    RTTI_PROPERTY(m_convoNameIfApplicable);
+    RTTI_PROPERTY(m_messageHistory);
+    RTTI_PROPERTY(m_responseOptions);
+});
+
 RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(SendContext);
+    RTTI_METHOD(SendContextSilent);
     RTTI_METHOD(TrackMappin);
     RTTI_METHOD(InjectKeypress);
     RTTI_METHOD(InjectActionPress);
@@ -972,6 +1135,8 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(OnSceneListChoiceDataProvided);
     RTTI_METHOD(HasForcedActionCooldown);
     RTTI_METHOD(OnQuickhackDataProvided);
+    RTTI_METHOD(OnSMSMessageDataProvided);
+    RTTI_METHOD(ResetBadConnectionCounter);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroMessage, { RTTI_ABSTRACT(); });
