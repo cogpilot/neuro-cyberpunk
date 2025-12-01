@@ -12,7 +12,7 @@ set_optimize("fastest")
 set_runtimes("MD")
 add_cxxflags("/GR-")
 
-add_requires("fmt", "glaze", "hopscotch-map", "openssl", "safetyhook", "semver", "wil")
+add_requires("fmt", "glaze", "hopscotch-map", "safetyhook", "semver", "wil")
 
 -- For libneurosdk
 includes("deps/xmake.lua")
