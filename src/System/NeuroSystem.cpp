@@ -84,7 +84,8 @@ public:
 };
 
 /**
- * \brief For interop with Glaze JSON serialization/deserialization, as I'm not sure on being able to make REDengine types work with Glaze.
+ * \brief For interop with Glaze JSON serialization/deserialization, as I'm not sure on being able to make REDengine
+ * types work with Glaze.
  */
 namespace JSON
 {
@@ -233,7 +234,7 @@ struct NeuroSMSResponseJson
 {
     int id{};
 };
-}
+} // namespace JSON
 } // namespace Impl
 
 /**
@@ -256,7 +257,9 @@ void mod::NeuroActionResponseMessage::DispatchNeuroMessage(neuro::NeuroSocket& a
 bool mod::NeuroActionResponseMessage::IsResponseToForcedAction() const
 {
     // Note: evil hardcode
-    return m_actionName == "select_dialogue_choice" || m_actionName == "run_quickhack_on_target";
+    // Evil hardcode has claimed 1 (one) action to date
+    return m_actionName == "select_dialogue_choice" || m_actionName == "run_quickhack_on_target" ||
+           m_actionName == "select_sms_message_choice";
 }
 
 void mod::NeuroContextMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
@@ -445,19 +448,19 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     response->m_actionResponse = "Invalid quickhack ID provided.";
                     break;
                 }
-                
+
                 // Ugly code, but should avoid lock
                 EntityID targetId =
                     InterlockedExchange64((volatile long long*)(&GetInstance()->m_quickhackActionTargetId.hash), 0LL);
 
                 if (!targetId)
                 {
-                    response->m_actionResponse = "No entity was specified as quickhack target. Did you skip the forced action?";
+                    response->m_actionResponse =
+                        "No entity was specified as quickhack target. Did you skip the forced action?";
                     break;
                 }
 
-                if (!CallVirtual(GetInstance(), "OnQuickhackTarget", response->m_actionResponse, targetId,
-                                 json.id))
+                if (!CallVirtual(GetInstance(), "OnQuickhackTarget", response->m_actionResponse, targetId, json.id))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -534,7 +537,6 @@ void mod::NeuroSystem::Tick(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
                     std::unique_lock queueLock(m_messageLock);
                     m_messageQueue.Clear();
                 }
-                
 
                 if (m_disableConnection)
                 {
@@ -1031,7 +1033,8 @@ void mod::NeuroSystem::OnSMSMessageDataProvided(Handle<Impl::NeuroPhoneMessageDt
 
     auto msg = MakeHandle<NeuroForcedActionMessage>();
 
-    msg->m_query = "You have options to reply to a phone message. The choices are provided in the action context. If you do not wish to reply to the message, pass -1 as the message ID.";
+    msg->m_query = "You have options to reply to a phone message. The choices are provided in the action context. If "
+                   "you do not wish to reply to the message, pass -1 as the message ID.";
 
     std::string json{};
 
