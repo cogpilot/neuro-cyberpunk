@@ -1,6 +1,6 @@
 -- Xmake bindings for libneurosdk
 
-add_requires("mongoose", "tinycthread")
+add_requires("json.h", "mongoose", "tinycthread")
 
 target("libneurosdk")
     set_warnings("all")
@@ -13,7 +13,7 @@ target("libneurosdk")
         "_CRT_SECURE_NO_WARNINGS",
         "_CRT_RAND_S"
     )
-    add_packages("mongoose", "tinycthread")
+    add_packages("json.h", "mongoose", "tinycthread")
 
     add_files("libneurosdk/src/neurosdk.c")
     add_includedirs("libneurosdk/include")
