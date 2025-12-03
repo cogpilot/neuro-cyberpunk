@@ -280,13 +280,15 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
     response->m_actionName = aAction.name;
     response->m_actionId = aAction.id;
     response->m_actionData = aAction.data;
-
-    // Check if this is a forced action response
-    std::unique_lock lock(GetInstance()->m_messageLock);
-    if (GetInstance()->m_hasSentForcedActionMessage && response->IsResponseToForcedAction())
     {
-        // If it is, drop the flag so we can send new forced action messages
-        GetInstance()->m_hasSentForcedActionMessage = false;
+        // In scope to not deadlock on pregame
+        // Check if this is a forced action response
+        std::unique_lock lock(GetInstance()->m_messageLock);
+        if (GetInstance()->m_hasSentForcedActionMessage && response->IsResponseToForcedAction())
+        {
+            // If it is, drop the flag so we can send new forced action messages
+            GetInstance()->m_hasSentForcedActionMessage = false;
+        }
     }
 
     if (GetInstance()->IsPreGame())
