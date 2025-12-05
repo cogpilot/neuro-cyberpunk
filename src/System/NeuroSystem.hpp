@@ -5,6 +5,7 @@
 
 #include <RED4ext/Scripting/Natives/Generated/EInputAction.hpp>
 #include <RED4ext/Scripting/Natives/Generated/EInputKey.hpp>
+#include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/DialogChoiceHubs.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/ListChoiceHubData.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
 
@@ -18,7 +19,7 @@ namespace Impl
 {
 class NeuroQuickhackDataDto;
 class NeuroPhoneMessageDto;
-}
+} // namespace Impl
 
 namespace mod
 {
@@ -128,6 +129,8 @@ public:
 
     static constexpr auto MaxKeepTrackOfForcedActions = 5.f;
 
+    static constexpr auto ChoicehubDelayBeforeForcedAction = 5.f;
+
     // Lock to access Neuro socket
     Red::SharedSpinLock m_socketLock{};
 
@@ -174,6 +177,10 @@ public:
 
 #pragma region SceneHandling
     Red::SharedSpinLock m_choicehubLock{};
+
+    // How long we should receive choice node updates before sending forced action to Neuro
+    float m_choiceHubAvailableTime{};
+
     tsl::hopscotch_set<int> m_encounteredChoiceHubIDs{};
 #pragma endregion
 
@@ -202,17 +209,24 @@ public:
     bool InitializeConnection();
 
     /**
-     * \brief Tick function registered by the update registrar.
+     * \brief Tick function registered by the update registrar for communication updates.
      * \param aFrameInfo The frame time information.
      * \param aJobQueue The job queue provided to the game system for work.
      */
-    void Tick(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
+    void TickCommunication(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
 
     /**
      * \brief Tick function registered by update registrar for draining user input.
      * \param aFrameInfo The previous frame's information (frametime and whatnot)
      */
-    void DrainInputQueue(Red::FrameInfo& aFrameInfo);
+    void TickInputQueue(Red::FrameInfo& aFrameInfo);
+
+    /**
+     * \brief Tick function registered by the update registrar to update scene information timers.
+     * \param aFrameInfo The previous frame's information (frametime and whatnot)
+     * \param aJobQueue The job queue provided by the update registrar.
+     */
+    void TickSceneInfo(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
 
     /**
      * \brief Add a message for Neuro to the message queue.
@@ -299,6 +313,12 @@ public:
      * \param aRef The list choice hub data reference.
      */
     void OnSceneListChoiceDataProvided(Red::ScriptRef<Red::game::interactions::vis::ListChoiceHubData>& aRef);
+
+    /**
+     * \brief Update current choicehub state and reset timer before sending current choicehub info to Neuro.
+     * \param aRef The dialog data.
+     */
+    void OnSceneDialogChoiceHubs(Red::ScriptRef<Red::game::interactions::vis::DialogChoiceHubs>& aRef);
 
     /**
      * \brief Check if the forced action cooldown is active. Used for quickhack handling due to special handling of

@@ -32,6 +32,8 @@ using DistrictNameMap = tsl::hopscotch_map<TweakDBID, CString>;
 // Note: doesn't account for changing lang in the middle of game
 DistrictNameMap GetCachedDistrictNames()
 {
+    static auto Localization = shared::raw::Localization::LocalizationSystem::GetInstance();
+
     auto districtRecordType = GetClass<District_Record>();
 
     tsl::hopscotch_map<TweakDBID, CString> ret{};
@@ -42,11 +44,8 @@ DistrictNameMap GetCachedDistrictNames()
         {
             CString displayName{};
             TweakDB::Get()->TryGetValue({asTdb->recordID, ".localizedName"}, displayName);
-            StringView view = displayName;
 
-            CString translated{};
-
-            shared::raw::Localization::LocalizationSystem::GetInstance()->GetOnscreen(translated, view);
+            auto translated = Localization->GetOnscreen(displayName);
 
             ret.insert_or_assign(asTdb->recordID, std::move(translated));
         }
@@ -68,12 +67,7 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
     auto& displayName = *shared::raw::Mappin::GetDisplayName(aMappin);
     if (displayName.Length() > 0u)
     {
-        StringView view = displayName;
-        CString ret{};
-
-        Localization->GetOnscreen(ret, view);
-
-        return ret;
+        return Localization->GetOnscreen(displayName);
     }
 
     const auto mappinPhase = shared::raw::Mappin::GetMappinPhase(aMappin);
@@ -116,13 +110,7 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
         const auto& pointData = shared::raw::FastTravelMappin::PointData::Ref(fastTravelMapPin);
         CString displayName{};
         TweakDB::Get()->TryGetValue({pointData->pointRecord, ".displayName"}, displayName);
-
-        StringView view = displayName;
-        CString ret{};
-
-        Localization->GetOnscreen(ret, view);
-
-        return ret;
+        return Localization->GetOnscreen(displayName);
     }
 
     uint32_t pathHash{};
@@ -169,16 +157,8 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
                                 game::JournalEntryState::Inactive)
                             {
                                 return "Undiscovered quest...";
-                            }
-
-                            auto& displayName = quest->title.unk08;
-
-                            StringView view = displayName;
-                            CString ret{};
-
-                            Localization->GetOnscreen(ret, view);
-
-                            return ret;
+                            }                            
+                            return Localization->GetOnscreen(quest->title.unk08);
                         }
                     }
                 }
@@ -211,14 +191,7 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
                         {
                             return "Undiscovered quest...";
                         }
-                        auto& displayName = quest->title.unk08;
-
-                        StringView view = displayName;
-                        CString ret{};
-
-                        Localization->GetOnscreen(ret, view);
-
-                        return ret;
+                        return Localization->GetOnscreen(quest->title.unk08);
                     }
                 }
             }

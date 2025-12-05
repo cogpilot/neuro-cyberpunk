@@ -105,6 +105,7 @@ struct NeuroChoiceLineJson
     std::string text{};
 };
 
+// NOTE: rework this for new idea
 struct NeuroChoicehubDescJson
 {
     int hubId{};
@@ -520,7 +521,7 @@ bool mod::NeuroSystem::InitializeConnection()
     return m_neuroSocket->Initialize(DispatchNeuroAction);
 }
 
-void mod::NeuroSystem::Tick(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
+void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
 {
     const auto dt = aFrameInfo.deltaTime;
 
@@ -641,7 +642,7 @@ void mod::NeuroSystem::Tick(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
         });
 }
 
-void mod::NeuroSystem::DrainInputQueue(FrameInfo& aInfo)
+void mod::NeuroSystem::TickInputQueue(FrameInfo& aInfo)
 {
     std::unique_lock lock(m_inputLock);
 
@@ -692,6 +693,15 @@ void mod::NeuroSystem::DrainInputQueue(FrameInfo& aInfo)
     }
 
     m_injectedKeyQueueIndex++;
+}
+
+void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
+{
+    const auto dt = aInfo.deltaTime;
+
+    aJobQueue.Dispatch([this, dt]() {
+
+        });
 }
 
 void mod::NeuroSystem::AddMessage(const Handle<NeuroMessage>& aMsg)
@@ -784,6 +794,8 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
      * }
      *
      */
+
+    // NOTE: rework this
     static auto LocalizationSystem = shared::raw::Localization::LocalizationSystem::GetInstance();
 
     if (!aRef)
@@ -991,6 +1003,12 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
     AddMessage(msg);
 }
 
+void mod::NeuroSystem::OnSceneDialogChoiceHubs(Red::ScriptRef<game::interactions::vis::DialogChoiceHubs>& aRef)
+{
+    // Update internal state and reset timer
+    return;
+}
+
 bool mod::NeuroSystem::HasForcedActionCooldown()
 {
     // Uh, I don't think we can deadlock this?
@@ -1062,11 +1080,17 @@ void mod::NeuroSystem::ResetBadConnectionCounter()
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
 {
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
-    aRegistrar->RegisterUpdate(UpdateTickGroup::PreRenderUpdate, this, "NeuroSystem/Communicate",
-                               [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue) { Tick(aFrameInfo, aJobQueue); });
+    // Note: It does not run in the pause menu, I believe we can do with one update registration
+    // aRegistrar->RegisterUpdate(UpdateTickGroup::PreRenderUpdate, this, "NeuroSystem/Communicate",
+    //                            [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue) { Tick(aFrameInfo, aJobQueue); });
 
-    aRegistrar->RegisterUpdate(UpdateTickGroup::PreBuckets, this, "NeuroSystem/DrainInput",
-                               [this](FrameInfo& aFrameInfo, JobQueue&) { DrainInputQueue(aFrameInfo); });
+    aRegistrar->RegisterUpdate(UpdateTickGroup::PreBuckets, this, "NeuroSystem/Tick",
+                               [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue)
+                               {
+                                   TickInputQueue(aFrameInfo);
+                                   TickSceneInfo(aFrameInfo, aJobQueue);
+                                   TickCommunication(aFrameInfo, aJobQueue);
+                               });
 }
 
 std::uint32_t mod::NeuroSystem::OnBeforeGameSave(const JobGroup& aJobGroup, void* aMetadataObject)
