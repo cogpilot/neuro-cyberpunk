@@ -15,6 +15,9 @@
 #include <neurosdk.h>
 #include <tsl/hopscotch_set.h>
 
+#include <string>
+#include <vector>
+
 namespace Impl
 {
 class NeuroQuickhackDataDto;
@@ -113,6 +116,32 @@ public:
 };
 
 /**
+ * \brief Wrapper for a choice option that Neuro has.
+ */
+struct NeuroChoiceContext
+{
+    int m_id{};
+    std::string m_hubTitle{};
+    std::string m_text{};
+    bool m_canChoose{};
+    bool m_isQuestImportant{};
+};
+
+/**
+ * \brief Wrapper for updating Neuro's provided scene choice data.
+ * Uses STL because we have to serialize this via Glaze.
+ */
+struct NeuroSceneDataContext
+{
+    std::vector<NeuroChoiceContext> m_choices{};
+
+    /**
+     * \brief Hash choice data to avoid sending Neuro multiple same contexts.
+     */
+    uint64_t HashChoices();
+};
+
+/**
  * \brief Bridge between Neuro's backend and game. Keeps websocket alive and serves as interface for scripting API.
  */
 class NeuroSystem : public Red::IGameSystem
@@ -180,6 +209,9 @@ public:
 
     // How long we should receive choice node updates before sending forced action to Neuro
     float m_choiceHubAvailableTime{};
+
+    NeuroSceneDataContext m_choiceHubDataContext{};
+    uint64_t m_lastChoiceHubDataHash{};
 
     tsl::hopscotch_set<int> m_encounteredChoiceHubIDs{};
 #pragma endregion
@@ -290,14 +322,6 @@ public:
      * \param aKeys The keys to inject in sequence.
      */
     void InjectKeypressChain(const Red::DynArray<Red::EInputKey>& aKeys);
-
-    /**
-     * \brief Inject a synthetic input press into the input manager.
-     *
-     * \param aActionName The action name to inject.
-     * \param aDurationSeconds How long the action should be held down.
-     */
-    void InjectActionPress(Red::CName aActionName, float aDurationSeconds);
 #pragma endregion
 
 #pragma region ScriptingUtils
@@ -318,7 +342,7 @@ public:
      * \brief Update current choicehub state and reset timer before sending current choicehub info to Neuro.
      * \param aRef The dialog data.
      */
-    void OnSceneDialogChoiceHubs(Red::ScriptRef<Red::game::interactions::vis::DialogChoiceHubs>& aRef);
+    void OnSceneDialogChoiceHubsProvided(Red::ScriptRef<Red::game::interactions::vis::DialogChoiceHubs>& aRef);
 
     /**
      * \brief Check if the forced action cooldown is active. Used for quickhack handling due to special handling of

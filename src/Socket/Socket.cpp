@@ -233,9 +233,15 @@ bool neuro::NeuroSocket::Initialize(NeuroActionProcessor aProcessor)
 
     if (const auto status = neurosdk_context_create(&m_context, &desc); status != NeuroSDK_None)
     {
-        Context::PluginLogger->ErrorF(Context::PluginHandle, "Failed to create Neuro SDK context! Error %s",
-                                      neurosdk_error_string(status));
-        return false;
+        // Retry with fallback flag (for Tony/other less conformant API implementations)
+        *(uint32_t*)(&desc.flags) |= NeuroSDK_ContextCreateFlags_FallbackToNonRFCImplementation;
+
+        if (const auto status = neurosdk_context_create(&m_context, &desc); status != NeuroSDK_None)
+        {
+            Context::PluginLogger->ErrorF(Context::PluginHandle, "Failed to create Neuro SDK context! Error %s",
+                                          neurosdk_error_string(status));
+            return false;
+        }
     }
 
     // Tell backend we started up

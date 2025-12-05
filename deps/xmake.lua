@@ -8,7 +8,7 @@ target("libneurosdk")
     set_languages("c17")
     add_defines(
         "NEUROSDK_BUILD_STATIC_LIB",
-        "BUILD_WITH_BUILDTOOLS",
+        "BUILD_WITH_BUILDTOOLS=1",
         "LIB_VERSION=\"0.1.1\"",
         "_CRT_SECURE_NO_WARNINGS",
         "_CRT_RAND_S"

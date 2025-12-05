@@ -238,6 +238,32 @@ struct NeuroSMSResponseJson
 } // namespace JSON
 } // namespace Impl
 
+uint64_t mod::NeuroSceneDataContext::HashChoices()
+{
+    // Start with hash seed
+    uint64_t hash = 0xCBF29CE484222325ull;
+
+    for (auto& i : m_choices)
+    {
+        hash = FNV1a64((uint8_t*)&i.m_id, sizeof(int), hash);
+
+        if (!i.m_hubTitle.empty())
+        {
+            hash = FNV1a64((uint8_t*)i.m_hubTitle.data(), i.m_hubTitle.size(), hash);
+        }
+
+        if (!i.m_text.empty())
+        {
+            hash = FNV1a64((uint8_t*)i.m_text.data(), i.m_text.size(), hash);
+        }
+
+        hash = FNV1a64((uint8_t*)&i.m_canChoose, sizeof(bool), hash);
+        hash = FNV1a64((uint8_t*)&i.m_isQuestImportant, sizeof(bool), hash);
+    }
+
+    return hash;
+}
+
 /**
  * \brief Helper for switch() statements with strings.
  */
@@ -772,10 +798,6 @@ void mod::NeuroSystem::InjectKeypressChain(const Red::DynArray<Red::EInputKey>& 
     }
 }
 
-void mod::NeuroSystem::InjectActionPress(CName aActionName, float aDurationSeconds)
-{
-}
-
 void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::interactions::vis::ListChoiceHubData>& aRef)
 {
     /**
@@ -1003,7 +1025,7 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
     AddMessage(msg);
 }
 
-void mod::NeuroSystem::OnSceneDialogChoiceHubs(Red::ScriptRef<game::interactions::vis::DialogChoiceHubs>& aRef)
+void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(Red::ScriptRef<game::interactions::vis::DialogChoiceHubs>& aRef)
 {
     // Update internal state and reset timer
     return;
@@ -1159,9 +1181,9 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(SendContextSilent);
     RTTI_METHOD(TrackMappin);
     RTTI_METHOD(InjectKeypress);
-    RTTI_METHOD(InjectActionPress);
     RTTI_METHOD(InjectKeypressChain);
     RTTI_METHOD(OnSceneListChoiceDataProvided);
+    RTTI_METHOD(OnSceneDialogChoiceHubsProvided);
     RTTI_METHOD(HasForcedActionCooldown);
     RTTI_METHOD(OnQuickhackDataProvided);
     RTTI_METHOD(OnSMSMessageDataProvided);
