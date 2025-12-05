@@ -6,6 +6,15 @@ private final func UpdateDialogHubData() -> Void {
     wrappedMethod();
 }
 
+@replaceMethod(dialogWidgetGameController)
+protected func UpdateDialogsData(const data: script_ref<DialogChoiceHubs>) -> Void {
+    let derefData = Deref(data);
+
+    this.m_data = derefData;
+
+    GameInstance.GetNeuroSystem().OnSceneDialogChoiceHubsProvided(data);
+}
+
 @wrapMethod(BaseSubtitlesGameController)
 private final func SpawnDialogLine(const lineData: script_ref<scnDialogLineData>) -> Void {
     let lineDataDeref = Deref(lineData);

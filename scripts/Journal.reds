@@ -9,7 +9,7 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
 
     // Not really slow on starting-ish save? Might get chuggier with more stuff
 
-    let asQuest = questEntry as JournalQuest;
+    let asQuest: ref<JournalQuest> = questEntry as JournalQuest;
 
     if !IsDefined(asQuest) {
         return "<invalid quest>";
@@ -21,9 +21,13 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
     // This might be slow, as it's very recursive
     // Good thing *most* of this will be running async!
     let questData = journalWrapper.BuildQuestData(asQuest);
-    let districtRecord = MappinUtils.GetDistrictRecord(questData.GetDistrict());
+    let districtRecord: ref<District_Record> = MappinUtils.GetDistrictRecord(questData.GetDistrict());
 
-    let baseData = s"Name: \(GetLocalizedText(questData.GetTitle())), type: \(questData.GetType())\r\nDescription:\r\n\(GetLocalizedText(questData.GetDescription()))\r\nDistrict: \(GetLocalizedText(districtRecord.LocalizedName()))";
+    let baseData = s"Name: \(GetLocalizedText(questData.GetTitle())), type: \(questData.GetType())\r\nDescription:\r\n\(GetLocalizedText(questData.GetDescription()))";
+
+    if IsDefined(districtRecord) {
+        baseData += s"\r\nDistrict: \(GetLocalizedText(districtRecord.LocalizedName()))";
+    }
 
     let objectives = questData.GetObjectives();
 
@@ -93,8 +97,8 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
         let duplicateCodexNameArray: [String];
 
         for link in links {
-            if Equals(this.GetEntryState(link), gameJournalEntryState.Active) {
-                let asCodexEntry = link as JournalCodexEntry;
+            if IsDefined(link) && Equals(this.GetEntryState(link), gameJournalEntryState.Active) {
+                let asCodexEntry: ref<JournalCodexEntry> = link as JournalCodexEntry;
 
                 if IsDefined(asCodexEntry) {
                     let title = asCodexEntry.GetTitle();
@@ -104,7 +108,7 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
                     }
                 } else {
                     // Special case: Phantom Liberty prerequisite quest
-                    let asQuestEntry = link as JournalQuest;
+                    let asQuestEntry: ref<JournalQuest> = link as JournalQuest;
 
                     if IsDefined(asQuestEntry) {
                         linkData

@@ -50,6 +50,8 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func OnSMSMessageDataProvided(data: ref<NeuroPhoneMessageDto>);
 
+    public native func OnSceneDialogChoiceHubsProvided(data: script_ref<DialogChoiceHubs>);
+
     public cb func OnConnectionFailure() -> Void {
         GameInstance
             .GetSystemRequestsHandler()
@@ -194,7 +196,15 @@ public native class NeuroSystem extends IGameSystem {
                 );
         }
 
-        return s"Tried to dispatch quickhack \"\(GetLocalizedText(hack.m_title))\" to target!";
+        let title = hack.m_title;
+
+        if StrLen(title) > 0 {
+            // This crashes for some reason, maybe the strlen() check will help?
+            let localized = GetLocalizedText(title);
+            return s"Tried to dispatch quickhack \"\(localized)\" to target!";
+        }
+
+        return "Tried to dispatch quickhack to target!";
     }
 
     public cb func OnSelectDialogueChoice(hubId: Int32, id: Int32) -> String {
