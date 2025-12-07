@@ -535,6 +535,19 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
         });
 }
 
+bool mod::NeuroSystem::OnGameStateUpdate(CGameApplication* aApp)
+{    
+    if (!GetInstance())
+    {
+        // Note: I don't think this should ever happen? 
+        // Game system initialization *should* happen earlier than running state
+        return false;
+    }
+
+    GetInstance()->TickStateUpdate();
+    return false;
+}
+
 bool mod::NeuroSystem::InitializeConnection()
 {
     // Drain message queue before reinitialization
@@ -547,78 +560,80 @@ bool mod::NeuroSystem::InitializeConnection()
     return m_neuroSocket->Initialize(DispatchNeuroAction);
 }
 
+void mod::NeuroSystem::TickStateUpdate()
+{
+    std::unique_lock lock(m_socketLock);
+
+    auto firstTick = !m_neuroSocket;
+
+    if (!m_neuroSocket)
+    {
+        if (m_disableConnection)
+        {
+            return;
+        }
+
+        if (!m_hasHadSuccessfulConnection && m_firstConnectionAttempts >= MaxConnectionAttemptsForFirstConnection)
+        {
+            // NOTE: maybe make popup in game?
+            Context::Spew("Maximum initial connection attempts to Neuro reached, not trying again.");
+            CallVirtual(this, "OnConnectionFailure");
+
+            m_disableConnection = true;
+            return;
+        }
+
+        // TODO: if we fail too often, send popup to game saying Neuro is unreachable and don't try to connect
+        // again?
+        if (m_failedToConnectBefore && m_lastRetryTime.TimePassed() <= RetryTimeSeconds)
+        {
+            return;
+        }
+
+        if (!InitializeConnection())
+        {
+            if (!m_hasHadSuccessfulConnection)
+            {
+                m_firstConnectionAttempts++;
+            }
+
+            m_lastRetryTime = {};
+            m_failedToConnectBefore = true;
+            return;
+        }
+    }
+    // If it's the first tick after connection, inform Neuro about the game state and if she can make commands
+    if (firstTick)
+    {
+        m_hasHadSuccessfulConnection = true;
+        if (!IsPreGame())
+        {
+            SendContext("The game is currently ingame. Commands can be executed.");
+
+            // For convenience, construct message and add to message queue on scripting side
+            // Note: this might lag a bit due to sync call
+            CallVirtual(this, "OnConnectedIngame");
+        }
+        else
+        {
+            SendContext("The game is currently in the main menu. No commands can be executed.");
+        }
+    }
+}
+
 void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
 {
     const auto dt = aFrameInfo.deltaTime;
 
     aJobQueue.Dispatch(
-        [this, dt](const JobGroup& aGroup)
+        [this, dt]()
         {
             std::unique_lock lock(m_socketLock);
 
-            auto firstTick = !m_neuroSocket;
-
             if (!m_neuroSocket)
             {
-                {
-                    // Just in case: drain the message queue even if it cannot be served
-                    // NOTE: without scope this WILL deadlock
-                    std::unique_lock queueLock(m_messageLock);
-                    m_messageQueue.Clear();
-                }
-
-                if (m_disableConnection)
-                {
-                    return;
-                }
-
-                if (!m_hasHadSuccessfulConnection &&
-                    m_firstConnectionAttempts >= MaxConnectionAttemptsForFirstConnection)
-                {
-                    // NOTE: maybe make popup in game?
-                    Context::Spew("Maximum initial connection attempts to Neuro reached, not trying again.");
-                    CallVirtual(this, "OnConnectionFailure");
-
-                    m_disableConnection = true;
-                    return;
-                }
-
-                // TODO: if we fail too often, send popup to game saying Neuro is unreachable and don't try to connect
-                // again?
-                if (m_failedToConnectBefore && m_lastRetryTime.TimePassed() <= RetryTimeSeconds)
-                {
-                    return;
-                }
-
-                if (!InitializeConnection())
-                {
-                    if (!m_hasHadSuccessfulConnection)
-                    {
-                        m_firstConnectionAttempts++;
-                    }
-
-                    m_lastRetryTime = {};
-                    m_failedToConnectBefore = true;
-                    return;
-                }
-            }
-
-            // If it's the first tick after connection, inform Neuro about the game state and if she can make commands
-            if (firstTick)
-            {
-                m_hasHadSuccessfulConnection = true;
-                if (!IsPreGame())
-                {
-                    SendContext("The game is currently ingame. Commands can be executed.");
-
-                    // For convenience, construct message and add to message queue on scripting side
-                    // Note: this might lag a bit due to sync call
-                    CallVirtual(this, "OnConnectedIngame");
-                }
-                else
-                {
-                    SendContext("The game is currently in the main menu. No commands can be executed.");
-                }
+                // Note: In this case, message queue will be drained by the main thread
+                return;
             }
 
             if (!m_neuroSocket->Tick())
@@ -1027,8 +1042,23 @@ void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::intera
 
 void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(Red::ScriptRef<game::interactions::vis::DialogChoiceHubs>& aRef)
 {
-    // Update internal state and reset timer
-    return;
+    if (!aRef)
+    {
+        return;
+    }
+
+    static auto LocalizationSystem = shared::raw::Localization::LocalizationSystem::GetInstance();
+
+    for (auto& hub : aRef->choiceHubs)
+    {
+        auto title = LocalizationSystem->GetOnscreen(hub.title);
+        Context::Spew("[Choicehub] ID: {}, title: {}, choice count: {}", hub.id, title.c_str(), hub.choices.size);
+
+        for (auto& choice : hub.choices)
+        {
+            Context::Spew("[Choicehub {}] {}", hub.id, choice.localizedName);
+        }
+    }
 }
 
 bool mod::NeuroSystem::HasForcedActionCooldown()
@@ -1183,11 +1213,11 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(InjectKeypress);
     RTTI_METHOD(InjectKeypressChain);
     RTTI_METHOD(OnSceneListChoiceDataProvided);
-    RTTI_METHOD(OnSceneDialogChoiceHubsProvided);
     RTTI_METHOD(HasForcedActionCooldown);
     RTTI_METHOD(OnQuickhackDataProvided);
     RTTI_METHOD(OnSMSMessageDataProvided);
     RTTI_METHOD(ResetBadConnectionCounter);
+    RTTI_METHOD(OnSceneDialogChoiceHubsProvided);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroMessage, { RTTI_ABSTRACT(); });

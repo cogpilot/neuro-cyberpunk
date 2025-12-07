@@ -231,10 +231,13 @@ bool neuro::NeuroSocket::Initialize(NeuroActionProcessor aProcessor)
                                         .flags = (neurosdk_context_create_flags_e)NEUROSDK_CONTEXT_CREATE_FLAGS_DEBUG,
                                         .callback_log = neuro::NeuroSocket::LogNeuro};
 
+    // Retry with fallback flag (for Tony/other less conformant API implementations)
+    *(uint32_t*)(&desc.flags) |= NeuroSDK_ContextCreateFlags_FallbackToNonRFCImplementation;
+
     if (const auto status = neurosdk_context_create(&m_context, &desc); status != NeuroSDK_None)
     {
-        // Retry with fallback flag (for Tony/other less conformant API implementations)
-        *(uint32_t*)(&desc.flags) |= NeuroSDK_ContextCreateFlags_FallbackToNonRFCImplementation;
+        // Try: does this crash if we don't create context twice?
+        *(uint32_t*)(&desc.flags) &= (~NeuroSDK_ContextCreateFlags_FallbackToNonRFCImplementation);
 
         if (const auto status = neurosdk_context_create(&m_context, &desc); status != NeuroSDK_None)
         {

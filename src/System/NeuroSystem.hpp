@@ -8,6 +8,7 @@
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/DialogChoiceHubs.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/ListChoiceHubData.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
+#include <RED4ext/Scripting/Natives/entEntityID.hpp>
 
 #include <Socket/Socket.hpp>
 #include <Util/Time.hpp>
@@ -217,7 +218,7 @@ public:
 #pragma endregion
 
 #pragma region QuickhackHandling
-    Red::EntityID m_quickhackActionTargetId{};
+    Red::ent::EntityID m_quickhackActionTargetId{};
 #pragma endregion
 
 #pragma region SMSMessageHandling
@@ -235,10 +236,25 @@ public:
     static void DispatchNeuroAction(const neurosdk_message_action_t& aAction, neuro::NeuroSocket& aSocket);
 
     /**
+     * \brief Game state update function for RED4ext. This will always run on game main thread.
+     *
+     * \param aApplication A pointer to the game application.
+     * \return False to signify the state should keep running.
+     */
+    static bool OnGameStateUpdate(Red::CGameApplication* aApplication);
+
+    /**
      * \brief Reset m_neuroSocket and attempt to initialize it.
      * \return Whether or not initialization was successful.
      */
     bool InitializeConnection();
+
+    /**
+     * \brief Initialize connection to Neuro and reload it on failure.
+     *
+     * THIS MUST BE CALLED FROM GAME MAIN THREAD, OTHERWISE EVERYTHING BLOWS UP.
+     */
+    void TickStateUpdate();
 
     /**
      * \brief Tick function registered by the update registrar for communication updates.

@@ -3,6 +3,7 @@
 
 #include <RED4ext/RED4ext.hpp>
 #include <RedLib.hpp>
+#include <System/NeuroSystem.hpp>
 
 using namespace Red;
 
@@ -16,6 +17,14 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(PluginHandle aHandle, EMainReason aReaso
 
         // Package whole mod into RED4ext plugin folder
         aSdk->scripts->Add(aHandle, L"Scripts");
+
+        GameState state{};
+
+        state.OnEnter = nullptr;
+        state.OnUpdate = &mod::NeuroSystem::OnGameStateUpdate;
+        state.OnExit = nullptr;
+
+        aSdk->gameStates->Add(aHandle, EGameStateType::Running, &state);
 
         TypeInfoRegistrar::RegisterDiscovered();
         CRTTISystem::Get()->AddPostRegisterCallback([]() { Context::m_rttiReady = true; });
