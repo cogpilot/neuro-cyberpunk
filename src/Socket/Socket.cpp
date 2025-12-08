@@ -86,7 +86,8 @@ constexpr char Desc[] =
     R"(Select a dialogue choice option from a list provided in context.
 
 Choices may be timed.
-Choices may affect the story.)";
+Choices may affect the story.
+If you don't want to choose anything, pass -1 as the ID.)";
 constexpr char JsonSchema[] =
     R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
 
