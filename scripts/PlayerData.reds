@@ -92,6 +92,14 @@ public func GetNeuroPlayerContext() -> String {
 protected cb func OnGameLoadedFactReset(evt: ref<GameLoadedFactReset>) -> Bool {
     wrappedMethod(evt);
 
+    let systemRequestsHandler: ref<inkISystemRequestsHandler> = GameInstance.GetSystemRequestsHandler();
+
+    if IsDefined(systemRequestsHandler) {
+        if systemRequestsHandler.IsPreGame() {
+            return true;
+        }
+    }
+
     // Simplest way to do this
     let neuroSystem = GameInstance.GetNeuroSystem();
     neuroSystem.SendPlayerInformation(this);
@@ -99,6 +107,9 @@ protected cb func OnGameLoadedFactReset(evt: ref<GameLoadedFactReset>) -> Bool {
 
 @addField(PlayerPuppet)
 private let m_informedNeuroOfDeath: Bool;
+
+@addField(PlayerPuppet)
+public let m_informedNeuroOfOurSuicide: Bool;
 
 @wrapMethod(PlayerPuppet)
 protected cb func OnDeath(evt: ref<gameDeathEvent>) -> Bool {
@@ -183,8 +194,17 @@ protected cb func OnKillRewardEvent(evt: ref<KillRewardEvent>) -> Bool {
     wrappedMethod(evt);
 
     if IsDefined(this as PlayerPuppet) {
+        let player = this as PlayerPuppet;
+
         let lock: ref<GameObject> = evt.victim;
 
+        if player == lock {
+            if !player.m_informedNeuroOfOurSuicide {
+                player.m_informedNeuroOfOurSuicide = true;
+                GameInstance.GetNeuroSystem().SendContext("The player managed to kill themselves.");
+            }
+        }
+        
         let asPuppet = lock as ScriptedPuppet;
 
         if IsDefined(asPuppet) {

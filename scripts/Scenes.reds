@@ -1,21 +1,6 @@
 module Neuro
 
-@wrapMethod(DialogHubLogicController)
-private final func UpdateDialogHubData() -> Void {
-    GameInstance.GetNeuroSystem().OnSceneListChoiceDataProvided(this.m_data);
-    wrappedMethod();
-}
-
-// Test: fix the fucking crashes AAAA
-/*@replaceMethod(dialogWidgetGameController)
-protected func UpdateDialogsData(const data: script_ref<DialogChoiceHubs>) -> Void {
-    let derefData = Deref(data);
-
-    this.m_data = derefData;
-
-    GameInstance.GetNeuroSystem().OnSceneDialogChoiceHubsProvided(data);
-}*/
-// Test if this works
+// This seems more stable
 @wrapMethod(dialogWidgetGameController)
 protected func UpdateDialogsData(const data: script_ref<DialogChoiceHubs>) -> Void {
     wrappedMethod(data);

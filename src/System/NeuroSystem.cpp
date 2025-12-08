@@ -4,6 +4,7 @@
 #include <Shared/Raw/Player/Player.hpp>
 
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/ChoiceCaptionBluelinePart.hpp>
+#include <RED4ext/Scripting/Natives/Generated/game/interactions/ChoiceCaptionStringPart.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/ChoiceType.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/BluelineDescription.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/BluelinePart.hpp>
@@ -121,7 +122,6 @@ struct NeuroChoicehubDescJson
 struct NeuroPerformedChoiceJson
 {
     int id{};
-    int hubId{};
 };
 
 struct NeuroQuickhackJson
@@ -238,6 +238,154 @@ struct NeuroSMSResponseJson
 } // namespace JSON
 } // namespace Impl
 
+/**
+ * \brief Helper for switch() statements with strings.
+ */
+#define CNAME_HASH(x) CName(x).hash
+
+mod::NeuroChoiceContext mod::NeuroChoiceContext::FromGameData(game::interactions::vis::ListChoiceData& aChoiceData,
+                                                              CString& aHubTitle, int aId, bool aIsTimed,
+                                                              float aChoiceTimer)
+{
+    static auto LocalizationSystem = shared::raw::Localization::LocalizationSystem::GetInstance();
+    NeuroChoiceContext ctx{.m_id = aId,
+                           .m_hubTitle = aHubTitle.c_str(),
+                           .m_canChoose = true,
+                           .m_important = false,
+                           .m_isTimed = aIsTimed,
+                           .m_timer = aChoiceTimer};
+
+    std::vector<std::string> optionParts{};
+
+    const auto flags = aChoiceData.type.properties;
+
+    if ((flags & ((uint32_t)game::interactions::ChoiceType::Inactive |
+                  (uint32_t)game::interactions::ChoiceType::CheckFailed)) != 0u)
+    {
+        // We can't interact with these
+        ctx.m_canChoose = false;
+    }
+
+    if ((flags & ((uint32_t)game::interactions::ChoiceType::QuestImportant |
+                  (uint32_t)game::interactions::ChoiceType::Glowline)) != 0u)
+    {
+        ctx.m_important = true;
+    }
+
+    std::vector<std::string> stringTags{};
+
+    auto hasBluelineCondition = false;
+    for (auto& captionPart : aChoiceData.captionParts.parts)
+    {
+        if (!hasBluelineCondition)
+        {
+            if (auto& asBluelinePart = Cast<game::interactions::ChoiceCaptionBluelinePart>(captionPart))
+            {
+                if (asBluelinePart->blueline->parts.size == 0u)
+                {
+                    continue;
+                }
+
+                auto& part = asBluelinePart->blueline->parts[0];
+
+                switch (part->GetType()->GetName())
+                {
+                case CNAME_HASH("LifePathBluelinePart"):
+                {
+                    if (!part->passed)
+                    {
+                        // Just ignore it
+                        break;
+                    }
+                    auto& lifepathRecord = Red::GetProperty<Handle<TweakDBRecord>>(part, "record");
+
+                    gamedataLocKeyWrapper displayName{};
+
+                    if (!TweakDB::Get()->TryGetValue<gamedataLocKeyWrapper>({lifepathRecord->recordID, ".displayName"},
+                                                                            displayName))
+                    {
+                        break;
+                    }
+
+                    auto name = fmt::format("LocKey#{}", displayName.primaryKey);
+
+                    auto localizedName = LocalizationSystem->GetOnscreen(name.c_str());
+
+                    optionParts.push_back(fmt::format("[{}]", localizedName.c_str()));
+                    hasBluelineCondition = true;
+                    break;
+                }
+                case CNAME_HASH("BuildBluelinePart"):
+                {
+                    auto lhs = Red::GetProperty<int>(part, "lhsValue");
+                    auto rhs = Red::GetProperty<int>(part, "rhsValue");
+                    auto& buildRecord = Red::GetProperty<Handle<TweakDBRecord>>(part, "record");
+
+                    gamedataLocKeyWrapper displayName{};
+
+                    if (!TweakDB::Get()->TryGetValue<gamedataLocKeyWrapper>({buildRecord->recordID, ".displayName"},
+                                                                            displayName))
+                    {
+                        break;
+                    }
+
+                    // I know this is bad, but I can't be bothered to rev more localization
+                    auto name = fmt::format("LocKey#{}", displayName.primaryKey);
+                    auto localizedName = LocalizationSystem->GetOnscreen(name.c_str());
+
+                    if (part->passed)
+                    {
+                        optionParts.push_back(fmt::format("[Passed {}: {}/{}]", localizedName.c_str(), lhs, rhs));
+                    }
+                    else
+                    {
+                        optionParts.push_back(fmt::format("[Failed {}: {}/{}]", localizedName.c_str(), lhs, rhs));
+                    }
+                    hasBluelineCondition = true;
+
+                    break;
+                }
+                case CNAME_HASH("PaymentBluelinePart"):
+                {
+                    auto neededMoney = Red::GetProperty<int>(part, "paymentMoney");
+                    auto playerMoney = Red::GetProperty<int>(part, "playerMoney");
+
+                    if (part->passed)
+                    {
+                        optionParts.push_back(fmt::format("[Pay {} eddies]", neededMoney));
+                    }
+                    else
+                    {
+                        optionParts.push_back(fmt::format("[Not enough money! {} eddies needed, has {} eddies]",
+                                                          neededMoney, playerMoney));
+                    }
+                    hasBluelineCondition = true;
+                    break;
+                }
+                default:
+                    break;
+                }
+            }
+        }
+
+        if (const auto& asStringPart = Cast<game::interactions::ChoiceCaptionStringPart>(captionPart))
+        {
+            stringTags.push_back(LocalizationSystem->GetOnscreen(asStringPart->content).c_str());
+        }
+    }
+
+    if (!stringTags.empty())
+    {
+        optionParts.push_back(fmt::format("[{}]", fmt::join(stringTags.rbegin(), stringTags.rend(), " ")));
+    }
+
+    optionParts.push_back(aChoiceData.localizedName.c_str());
+
+    ctx.m_text = fmt::format("{}", fmt::join(optionParts, " "));
+
+    return ctx;
+}
+
 uint64_t mod::NeuroSceneDataContext::HashChoices()
 {
     // Start with hash seed
@@ -258,16 +406,13 @@ uint64_t mod::NeuroSceneDataContext::HashChoices()
         }
 
         hash = FNV1a64((uint8_t*)&i.m_canChoose, sizeof(bool), hash);
-        hash = FNV1a64((uint8_t*)&i.m_isQuestImportant, sizeof(bool), hash);
+        hash = FNV1a64((uint8_t*)&i.m_important, sizeof(bool), hash);
+        hash = FNV1a64((uint8_t*)&i.m_isTimed, sizeof(bool), hash);
+        hash = FNV1a64((uint8_t*)&i.m_timer, sizeof(float), hash);
     }
 
     return hash;
 }
-
-/**
- * \brief Helper for switch() statements with strings.
- */
-#define CNAME_HASH(x) CName(x).hash
 
 namespace Instance
 {
@@ -278,7 +423,7 @@ mod::NeuroSystem* Instance{};
 // Note: currently all of those ignore return values, I guess we could add some logging?
 void mod::NeuroActionResponseMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
 {
-    aSocket.RespondToAction(m_actionId, m_actionResponse);
+    aSocket.RespondToAction(m_actionId, m_actionResponse, m_success);
 }
 
 bool mod::NeuroActionResponseMessage::IsResponseToForcedAction() const
@@ -442,6 +587,16 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             case CNAME_HASH("select_dialogue_choice"):
             {
                 Impl::JSON::NeuroPerformedChoiceJson json{};
+                // Note: this action is special and should be tried until Neuro succeeds
+                response->m_success = false;
+
+                {
+                    // Reset these
+                    std::unique_lock lock(GetInstance()->m_choicehubLock);
+                    GetInstance()->m_countdownToForcedChoiceSelectionStarted = false;
+                    GetInstance()->m_choiceHubAvailableTime = 0.f;
+                }
+
                 // operator bool overload for glz::error_ctx returns true on failure!
                 if (glz::read_json(json, response->m_actionData.c_str()))
                 {
@@ -449,14 +604,8 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                if (json.id < 0 || json.hubId < 0)
-                {
-                    response->m_actionResponse = "Invalid choice ID or hub ID provided.";
-                    break;
-                }
-
-                if (!CallVirtual(GetInstance(), "OnSelectDialogueChoice", response->m_actionResponse, json.hubId,
-                                 json.id))
+                if (!CallVirtual(GetInstance(), "OnSelectDialogueChoice", response->m_actionResponse, json.id,
+                                 response->m_success))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -536,10 +685,10 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
 }
 
 bool mod::NeuroSystem::OnGameStateUpdate(CGameApplication* aApp)
-{    
+{
     if (!GetInstance())
     {
-        // Note: I don't think this should ever happen? 
+        // Note: I don't think this should ever happen?
         // Game system initialization *should* happen earlier than running state
         return false;
     }
@@ -740,8 +889,52 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 {
     const auto dt = aInfo.deltaTime;
 
-    aJobQueue.Dispatch([this, dt]() {
+    // Not sure if this needs jobqueue
+    aJobQueue.Dispatch(
+        [this, dt]()
+        {
+            std::unique_lock lock(m_choicehubLock);
 
+            if (!m_countdownToForcedChoiceSelectionStarted)
+            {
+                m_choiceHubAvailableTime = 0.f;
+                return;
+            }
+
+            if (m_choiceHubDataContext.m_choices.empty())
+            {
+                m_countdownToForcedChoiceSelectionStarted = false;
+                m_choiceHubAvailableTime = 0.f;
+                return;
+            }
+
+            m_choiceHubAvailableTime -= dt;
+
+            if (m_choiceHubAvailableTime > 0.f)
+            {
+                return;
+            }
+
+            // End the countdown
+            m_choiceHubAvailableTime = 0.f;
+            m_countdownToForcedChoiceSelectionStarted = false;
+
+            std::string json{};
+
+            if (glz::write_json(m_choiceHubDataContext.m_choices, json))
+            {
+                return;
+            }
+
+            auto msg = MakeHandle<NeuroForcedActionMessage>();
+
+            msg->m_actionName = "select_dialogue_choice";
+            msg->m_query = "You have to make a choice now. This action will repeat until the choice node gets "
+                           "invalidated (for instance, the player walks away or a timer runs out) or you make a valid "
+                           "choice. The choice options are provided via context.";
+            msg->m_state = json.c_str();
+
+            AddMessage(msg);
         });
 }
 
@@ -813,233 +1006,6 @@ void mod::NeuroSystem::InjectKeypressChain(const Red::DynArray<Red::EInputKey>& 
     }
 }
 
-void mod::NeuroSystem::OnSceneListChoiceDataProvided(Red::ScriptRef<game::interactions::vis::ListChoiceHubData>& aRef)
-{
-    /**
-     * Schema:
-     * {
-     *      hubId: int,
-     *      title: string,
-     *      choices: [{
-     *          id: int,
-     *          canInteract: bool,
-     *          isImportant: bool,
-     *          text: string
-     *      }],
-     *      isTimed: bool,
-     *      timeSeconds: float
-     * }
-     *
-     */
-
-    // NOTE: rework this
-    static auto LocalizationSystem = shared::raw::Localization::LocalizationSystem::GetInstance();
-
-    if (!aRef)
-    {
-        return;
-    }
-
-    std::unique_lock lock(m_choicehubLock);
-
-    // Note: a new ID is generated when choicehub gets recreated
-    if (m_encounteredChoiceHubIDs.contains(aRef->id))
-    {
-        return;
-    }
-
-    m_encounteredChoiceHubIDs.insert(aRef->id);
-
-    // Note: ChoiceTypeWrapper.IsType is just bitfield
-
-    Impl::JSON::NeuroChoicehubDescJson neuroContext{};
-
-    StringView titleView = aRef->title;
-    CString localizedTitle{};
-
-    LocalizationSystem->GetOnscreen(localizedTitle, titleView);
-
-    neuroContext.title = localizedTitle.c_str();
-    neuroContext.hubId = aRef->id;
-
-    for (auto it = 0u; it < aRef->choices.size; it++)
-    {
-        auto& entry = aRef->choices[it];
-
-        Impl::JSON::NeuroChoiceLineJson neuroChoiceInfo{};
-
-        std::vector<std::string> optionParts{};
-
-        neuroChoiceInfo.id = it;
-        neuroChoiceInfo.canInteract = true;
-
-        const auto flags = entry.type.properties;
-
-        if ((flags & ((uint32_t)game::interactions::ChoiceType::Inactive |
-                      (uint32_t)game::interactions::ChoiceType::CheckFailed)) != 0u)
-        {
-            // We can't interact with these
-            neuroChoiceInfo.canInteract = false;
-        }
-
-        if ((flags & ((uint32_t)game::interactions::ChoiceType::QuestImportant |
-                      (uint32_t)game::interactions::ChoiceType::Glowline)) != 0u)
-        {
-            neuroChoiceInfo.isImportant = true;
-        }
-
-        for (auto& captionPart : entry.captionParts.parts)
-        {
-            if (auto& asBluelinePart = Cast<game::interactions::ChoiceCaptionBluelinePart>(captionPart))
-            {
-                if (asBluelinePart->blueline->parts.size == 0u)
-                {
-                    continue;
-                }
-
-                auto& part = asBluelinePart->blueline->parts[0];
-
-                switch (part->GetType()->GetName())
-                {
-                case CNAME_HASH("LifePathBluelinePart"):
-                {
-                    if (!part->passed)
-                    {
-                        // Just ignore it
-                        break;
-                    }
-                    auto& lifepathRecord = Red::GetProperty<Handle<TweakDBRecord>>(part, "record");
-
-                    gamedataLocKeyWrapper displayName{};
-
-                    if (!TweakDB::Get()->TryGetValue<gamedataLocKeyWrapper>({lifepathRecord->recordID, ".displayName"},
-                                                                            displayName))
-                    {
-                        break;
-                    }
-
-                    auto name = fmt::format("LocKey#{}", displayName.primaryKey);
-
-                    CString localizedName{};
-                    StringView nameView = name.c_str();
-
-                    LocalizationSystem->GetOnscreen(localizedName, nameView);
-
-                    optionParts.push_back(fmt::format("[{}]", localizedName.c_str()));
-                    break;
-                }
-                case CNAME_HASH("BuildBluelinePart"):
-                {
-                    auto lhs = Red::GetProperty<int>(part, "lhsValue");
-                    auto rhs = Red::GetProperty<int>(part, "rhsValue");
-                    auto& buildRecord = Red::GetProperty<Handle<TweakDBRecord>>(part, "record");
-
-                    gamedataLocKeyWrapper displayName{};
-
-                    if (!TweakDB::Get()->TryGetValue<gamedataLocKeyWrapper>({buildRecord->recordID, ".displayName"},
-                                                                            displayName))
-                    {
-                        break;
-                    }
-
-                    // I know this is bad, but I can't be bothered to rev more localization
-                    auto name = fmt::format("LocKey#{}", displayName.primaryKey);
-
-                    CString localizedName{};
-                    StringView nameView = name.c_str();
-
-                    LocalizationSystem->GetOnscreen(localizedName, nameView);
-
-                    if (part->passed)
-                    {
-                        optionParts.push_back(fmt::format("[Passed {}: {}/{}]", localizedName.c_str(), lhs, rhs));
-                    }
-                    else
-                    {
-                        optionParts.push_back(fmt::format("[Failed {}: {}/{}]", localizedName.c_str(), lhs, rhs));
-                    }
-
-                    break;
-                }
-                case CNAME_HASH("PaymentBluelinePart"):
-                {
-                    auto neededMoney = Red::GetProperty<int>(part, "paymentMoney");
-                    auto playerMoney = Red::GetProperty<int>(part, "playerMoney");
-
-                    if (part->passed)
-                    {
-                        optionParts.push_back(fmt::format("[Pay {} eddies]", neededMoney));
-                    }
-                    else
-                    {
-                        optionParts.push_back(fmt::format("[Not enough money! {} eddies needed, has {} eddies]",
-                                                          neededMoney, playerMoney));
-                    }
-                    break;
-                }
-                default:
-                    break;
-                }
-            }
-
-            if (!optionParts.empty())
-            {
-                break;
-            }
-        }
-
-        CString captionTags{};
-
-        if (CallGlobal("GetCaptionTagsFromArray;script_ref<array<InteractionChoiceCaptionPart>>", captionTags,
-                       entry.captionParts.parts))
-        {
-            if (captionTags.Length() > 0)
-            {
-                optionParts.push_back(fmt::format("[{}]", captionTags.c_str()));
-            }
-        }
-
-        optionParts.push_back(entry.localizedName.c_str());
-
-        neuroChoiceInfo.text = fmt::format("{}", fmt::join(optionParts, " "));
-
-        neuroContext.choices.push_back(std::move(neuroChoiceInfo));
-    }
-
-    // Note: we ignore timed *choice options*, I don't think those are used
-    // Timed choicehubs, however, very much are
-    if (auto timeProvider = aRef->timeProvider.Lock())
-    {
-        constexpr auto VisualizerGetDuration =
-            shared::util::RawVFunc<0x110, float (*)(game::interactions::vis::IVisualizerTimeProvider*)>();
-
-        constexpr auto VisualizerGetProgress =
-            shared::util::RawVFunc<0x108, float (*)(game::interactions::vis::IVisualizerTimeProvider*)>();
-
-        neuroContext.isTimed = true;
-        neuroContext.timeSeconds = VisualizerGetDuration(timeProvider) - VisualizerGetProgress(timeProvider);
-    }
-
-    auto msg = MakeHandle<NeuroForcedActionMessage>();
-
-    msg->m_query = "You are presented with the following options. Respond with the hub ID and choice option ID if you "
-                   "want to pick an option. If you do not want to pick an option, send a -1 to the hub ID. Some of the "
-                   "options may not be active for various reasons";
-
-    msg->m_actionName = "select_dialogue_choice";
-
-    std::string json{};
-
-    if (glz::write_json(neuroContext, json))
-    {
-        return;
-    }
-
-    msg->m_state = json.c_str();
-
-    AddMessage(msg);
-}
-
 void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(Red::ScriptRef<game::interactions::vis::DialogChoiceHubs>& aRef)
 {
     if (!aRef)
@@ -1047,17 +1013,88 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(Red::ScriptRef<game::inte
         return;
     }
 
+    auto neuroChoiceId = 0;
+
     static auto LocalizationSystem = shared::raw::Localization::LocalizationSystem::GetInstance();
+
+    std::unique_lock lock(m_choicehubLock);
+    m_choiceHubDataContext.m_choices.clear();
+
+    if (aRef->choiceHubs.size == 0u)
+    {
+        // Empty hub...
+        if (m_countdownToForcedChoiceSelectionStarted)
+        {
+            // Notify Neuro that she doesn't need to care anymore
+            SendContext("Choices are no longer available!");
+        }
+
+        m_choiceHubAvailableTime = 0.f;
+        m_countdownToForcedChoiceSelectionStarted = false;
+        m_lastChoiceHubDataHash = 0u;
+        return;
+    }
+
+    // Just in case - though in practice this should not be hit
+    auto hasAtLeastOneAvailable = false;
 
     for (auto& hub : aRef->choiceHubs)
     {
+        auto isTimed = false;
+        auto timer = 0.f;
         auto title = LocalizationSystem->GetOnscreen(hub.title);
-        Context::Spew("[Choicehub] ID: {}, title: {}, choice count: {}", hub.id, title.c_str(), hub.choices.size);
+
+        if (auto timeProvider = hub.timeProvider.Lock())
+        {
+            constexpr auto VisualizerGetDuration =
+                shared::util::RawVFunc<0x110, float (*)(game::interactions::vis::IVisualizerTimeProvider*)>();
+
+            constexpr auto VisualizerGetProgress =
+                shared::util::RawVFunc<0x108, float (*)(game::interactions::vis::IVisualizerTimeProvider*)>();
+
+            isTimed = true;
+            timer = VisualizerGetDuration(timeProvider) - VisualizerGetProgress(timeProvider);
+        }
 
         for (auto& choice : hub.choices)
         {
-            Context::Spew("[Choicehub {}] {}", hub.id, choice.localizedName);
+            m_choiceHubDataContext.m_choices.push_back(
+                std::move(NeuroChoiceContext::FromGameData(choice, title, neuroChoiceId, isTimed, timer)));
+
+            if (m_choiceHubDataContext.m_choices.back().m_canChoose)
+            {
+                hasAtLeastOneAvailable = true;
+            }
+
+            neuroChoiceId++;
         }
+    }
+
+    auto hash = m_choiceHubDataContext.HashChoices();
+
+    if (hash == m_lastChoiceHubDataHash)
+    {
+        // Duplicates might confuse Neuro
+        return;
+    }
+
+    m_lastChoiceHubDataHash = hash;
+
+    std::string json{};
+
+    if (glz::write_json(m_choiceHubDataContext.m_choices, json))
+    {
+        return;
+    }
+
+    auto msg = fmt::format("You have new available choices. The current choices are as following: {}", json);
+
+    SendContext(msg.c_str());
+
+    if (hasAtLeastOneAvailable)
+    {
+        m_choiceHubAvailableTime = ChoicehubDelayBeforeForcedAction;
+        m_countdownToForcedChoiceSelectionStarted = true;
     }
 }
 
@@ -1163,7 +1200,11 @@ void mod::NeuroSystem::OnWorldDetached(world::RuntimeScene* aScene)
         "The game world is being exited. Either a save is being loaded or the game is being exited to main menu.");
 
     std::unique_lock sceneLock(m_choicehubLock);
-    m_encounteredChoiceHubIDs.clear();
+    m_countdownToForcedChoiceSelectionStarted = false;
+    m_choiceHubAvailableTime = 0.f;
+
+    m_lastChoiceHubDataHash = 0u;
+    m_choiceHubDataContext.m_choices.clear();
 
     std::unique_lock inputLock(m_inputLock);
     m_injectedKeyQueue.Clear();
@@ -1212,7 +1253,6 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(TrackMappin);
     RTTI_METHOD(InjectKeypress);
     RTTI_METHOD(InjectKeypressChain);
-    RTTI_METHOD(OnSceneListChoiceDataProvided);
     RTTI_METHOD(HasForcedActionCooldown);
     RTTI_METHOD(OnQuickhackDataProvided);
     RTTI_METHOD(OnSMSMessageDataProvided);

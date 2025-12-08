@@ -63,6 +63,9 @@ public:
     // The response sent to Neuro. Can be text or JSON.
     Red::CString m_actionResponse{};
 
+    // Whether or not the action is treated as successful. Used for dialogue choice options.
+    bool m_success = true;
+
     void DispatchNeuroMessage(neuro::NeuroSocket& aSocket) override;
 
     /**
@@ -125,7 +128,11 @@ struct NeuroChoiceContext
     std::string m_hubTitle{};
     std::string m_text{};
     bool m_canChoose{};
-    bool m_isQuestImportant{};
+    bool m_important{};
+    bool m_isTimed{};
+    float m_timer{};
+
+    static NeuroChoiceContext FromGameData(Red::game::interactions::vis::ListChoiceData& aChoiceData, Red::CString& aHubTitle, int aId, bool aIsTimed, float aChoiceTimer);
 };
 
 /**
@@ -181,6 +188,8 @@ public:
 
     // Last reconnection retry time if we don't have a socket
     util::Timestamp m_lastRetryTime{};
+#pragma endregion
+
 #pragma region Messages
     // Lock for message queue
     Red::SharedSpinLock m_messageLock{};
@@ -203,18 +212,16 @@ public:
     float m_inputTimer{};
     std::uint32_t m_injectedKeyQueueIndex{};
 #pragma endregion
-#pragma endregion
 
 #pragma region SceneHandling
     Red::SharedSpinLock m_choicehubLock{};
 
     // How long we should receive choice node updates before sending forced action to Neuro
     float m_choiceHubAvailableTime{};
+    bool m_countdownToForcedChoiceSelectionStarted{};
 
     NeuroSceneDataContext m_choiceHubDataContext{};
     uint64_t m_lastChoiceHubDataHash{};
-
-    tsl::hopscotch_set<int> m_encounteredChoiceHubIDs{};
 #pragma endregion
 
 #pragma region QuickhackHandling
@@ -347,12 +354,6 @@ public:
      * \param aMappin The mappin to track.
      */
     void TrackMappin(Red::Handle<Red::game::mappins::IMappin>& aMappin);
-
-    /**
-     * \brief Send Neuro scene list choice data upon its initial appearance. Deduplicated via choicehub IDs.
-     * \param aRef The list choice hub data reference.
-     */
-    void OnSceneListChoiceDataProvided(Red::ScriptRef<Red::game::interactions::vis::ListChoiceHubData>& aRef);
 
     /**
      * \brief Update current choicehub state and reset timer before sending current choicehub info to Neuro.

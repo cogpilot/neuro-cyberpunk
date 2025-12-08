@@ -40,8 +40,6 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func TrackMappin(mappin: ref<IMappin>) -> Void;
 
-    public native func OnSceneListChoiceDataProvided(data: script_ref<ListChoiceHubData>) -> Void;
-
     public native func InjectKeypressChain(data: [EInputKey]) -> Void;
 
     public native func HasForcedActionCooldown() -> Bool;
@@ -207,22 +205,73 @@ public native class NeuroSystem extends IGameSystem {
         return "Tried to dispatch quickhack to target!";
     }
 
-    public cb func OnSelectDialogueChoice(hubId: Int32, id: Int32) -> String {
+    public cb func OnSelectDialogueChoice(id: Int32, out success: Bool) -> String {
         let uiInteractionsBlackboardID = GetAllBlackboardDefs().UIInteractions;
         let blackboard = GameInstance.GetBlackboardSystem(GetGameInstance()).Get(uiInteractionsBlackboardID);
 
         if !IsDefined(blackboard) {
+            success = true;
             return "Failed to get UI interaction blackboard.";
+        }
+
+        let hubs = FromVariant<DialogChoiceHubs>(blackboard.GetVariant(uiInteractionsBlackboardID.DialogChoiceHubs));
+
+        if ArraySize(hubs.choiceHubs) == 0 {
+            success = true;
+            return "No choice hubs available, cannot make a choice.";
         }
 
         let currentChoicehubId = blackboard.GetInt(uiInteractionsBlackboardID.ActiveChoiceHubID);
 
-        if hubId != currentChoicehubId {
-            return "The current choice hub ID doesn\'t match the sent one!";
+        if currentChoicehubId == -1 {
+            success = true;
+            return "No choices available, cannot make a choice";
         }
 
         let currentChoiceId = blackboard.GetInt(uiInteractionsBlackboardID.SelectedIndex);
-        let delta = id - currentChoiceId;
+
+        let currAbsoluteChoiceId = 0;
+        let totalChoiceCount = 0;
+    
+        for hub in hubs.choiceHubs {
+            totalChoiceCount += ArraySize(hub.choices);
+        }
+
+        if id >= totalChoiceCount {
+            success = false;
+            return "Invalid choice ID, too high!";
+        }
+
+        if id < 0 {
+            // Intentional rejection of a choice
+            success = true;
+            let hasTimedChoice = false;
+
+            for hub in hubs.choiceHubs {
+                if IsDefined(hub.timeProvider) {
+                    hasTimedChoice = true;
+                    break;
+                }
+            }
+
+            if hasTimedChoice {
+                return "You chose to wait and not pick anything just yet.";
+            } else {
+                return "You chose to not select a choice. Let the player know why.";
+            }
+        }
+
+        for hub in hubs.choiceHubs {
+            if hub.id == currentChoicehubId {
+                currAbsoluteChoiceId += currentChoiceId;
+                break;
+            } else {
+                currAbsoluteChoiceId += ArraySize(hub.choices);
+            }
+        }
+
+        ModLog(n"Neuro", s"Absolute current choice ID: \(currAbsoluteChoiceId), relative: \(currentChoiceId)");
+        let delta = id - currAbsoluteChoiceId;
 
         // Keys are hardcoded, you could try to dynamically resolve actions but NO
         let usedKey = EInputKey.IK_Down;
@@ -243,7 +292,8 @@ public native class NeuroSystem extends IGameSystem {
 
         this.InjectKeypressChain(chain);
 
-        return "Attempting to make the choice.";
+        success = true;
+        return "Trying to make the choice.";
     }
 
     public cb func OnAutodriveToMappin(mappinId: NewMappinID) -> String {
@@ -433,7 +483,7 @@ public native class NeuroSystem extends IGameSystem {
         let data = "# Quests:\r\n";
 
         for i in questList {
-            let asQuest = i as JournalQuest;
+            let asQuest: ref<JournalQuest> = i as JournalQuest;
 
             if IsDefined(asQuest) {
                 data += journalManager.GetNeuroFriendlyQuestData(asQuest) + "\r\n";

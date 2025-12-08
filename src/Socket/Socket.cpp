@@ -83,24 +83,12 @@ namespace SelectChoiceOption
 {
 constexpr char Name[] = "select_dialogue_choice";
 constexpr char Desc[] =
-    R"(Select a dialogue choice option.
-Choice options are provided in a forced action context as a JSON object with the approximate schema of
-{
-     hubId: int,
-     title: string,
-     choices: [{
-        id: int,
-        canInteract: bool,
-        isImportant: bool,
-        text: string
-     }],
-     isTimed: bool,
-     timeSeconds: float
-}. 
+    R"(Select a dialogue choice option from a list provided in context.
+
 Choices may be timed.
 Choices may affect the story.)";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" }, "hubId": { "description": "The ID of the dialogue hub from the provided context.", "type": "integer" } } })";
+    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectChoiceOption
@@ -165,11 +153,11 @@ neuro::NeuroSocket::~NeuroSocket()
     }
 }
 
-bool neuro::NeuroSocket::RespondToAction(StringView aActionId, StringView aMsg)
+bool neuro::NeuroSocket::RespondToAction(StringView aActionId, StringView aMsg, bool aSuccess)
 {
     neurosdk_message_t msg{
         .kind = NeuroSDK_MessageKind_ActionResult,
-        .value = {.action_result = {.id = aActionId.Data(), .success = true, .message = aMsg.Data()}}};
+        .value = {.action_result = {.id = aActionId.Data(), .success = aSuccess, .message = aMsg.Data()}}};
 
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
 }

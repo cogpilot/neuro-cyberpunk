@@ -39,13 +39,14 @@ namespace neuro {
         bool SendContext(Red::StringView aContext, bool aSilent = false);
 
         /**
-        * \brief Respond to an action Neuro made. To prevent retries, the action is always marked as a success.
+        * \brief Respond to an action Neuro made. To prevent retries, the action is marked as a success by default.
         * \param aActionId The ID of the action Neuro made.
         * \param aMsg The message to be sent to Neuro.
+        * \param aSuccess Whether the action was successful and thus shouldn't be retried.
         * 
         * \return The success of the operation.
         */
-        bool RespondToAction(Red::StringView aActionId, Red::StringView aMsg);
+        bool RespondToAction(Red::StringView aActionId, Red::StringView aMsg, bool aSuccess = true);
 
         /**
          * \brief Send a message telling Neuro to do something.
