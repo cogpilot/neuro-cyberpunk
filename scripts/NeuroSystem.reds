@@ -199,10 +199,10 @@ public native class NeuroSystem extends IGameSystem {
         if StrLen(title) > 0 {
             // This crashes for some reason, maybe the strlen() check will help?
             let localized = GetLocalizedText(title);
-            return s"Tried to dispatch quickhack \"\(localized)\" to target!";
+            return s"Dispatched quickhack \"\(localized)\" to target!";
         }
 
-        return "Tried to dispatch quickhack to target!";
+        return "Dispatched quickhack to target!";
     }
 
     public cb func OnSelectDialogueChoice(id: Int32, out success: Bool) -> String {
@@ -293,7 +293,7 @@ public native class NeuroSystem extends IGameSystem {
         this.InjectKeypressChain(chain);
 
         success = true;
-        return "Trying to make the choice.";
+        return "You have chosen a dialogue choice, which your player in-game will now perform.";
     }
 
     public cb func OnAutodriveToMappin(mappinId: NewMappinID) -> String {

@@ -74,7 +74,7 @@ constexpr char Name[] = "drive_to_waypoint";
 constexpr char Desc[] =
     R"(Toggle automatic driving to drive to a specific waypoint if the player is currently driving a vehicle. You can go to any point returned by query_waypoints or randomly select a fast travel waypoint in a district. )";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["id", "district", "tracked"] }, "target": { "description": "The selected destination. If destType == 'district', has to be one of the districts within query_waypoints. If destType == 'id', has to be one of the IDs returned by query_waypoints. If destType == 'tracked', can be left empty.", "type": "string" } } })";
+    R"({ "additionalProperties": false, "type": "object", "properties": { "destType": { "description": "The type of the selected destination.", "enum": ["id", "district", "tracked"] }, "target": { "description": "The selected destination. If destType == 'district', has to be one of the districts within query_waypoints. If destType == 'id', has to be one of the IDs returned by query_waypoints. If destType == 'tracked', can be left empty.", "type": "string" } }, "required": ["destType", "target"] })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace DriveToDestination
@@ -89,7 +89,7 @@ Choices may be timed.
 Choices may affect the story.
 If you don't want to choose anything, pass -1 as the ID.)";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } } })";
+    R"({ "additionalProperties": false, "type": "object", "properties": { "id": { "description": "The ID of the selected dialogue option from the provided options.", "type": "integer" } }, "required": ["id"] })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectChoiceOption
@@ -102,7 +102,7 @@ constexpr char Desc[] =
 Choice options are provided in a forced action context.
 Choices may affect the story.)";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "properties": { "id": { "description": "The ID of the selected SMS message option from the provided options.", "type": "integer" } } })";
+    R"({ "additionalProperties": false, "type": "object", "properties": { "id": { "description": "The ID of the selected SMS message option from the provided options.", "type": "integer" } }, "required": ["id"] })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectSMSResponse
@@ -114,7 +114,7 @@ constexpr char Desc[] =
     R"(Choose a quickhack to hack a target with. Targets can be enemies or inanimate objects.
 A list of quickhacks is provided in context, as well as information on the quickhack target. Quickhacks can only be performed once a forced action is provided.)";
 constexpr char JsonSchema[] =
-    R"({ "type": "object", "title": "SelectQuickhack", "properties": { "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } } })";
+    R"({ "additionalProperties": false, "type": "object", "title": "SelectQuickhack", "properties": { "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } }, "required": ["id"] })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace RunQuickhackOnTarget
