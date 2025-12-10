@@ -27,6 +27,26 @@ public func GetNeuroPlayerContext() -> String {
         }
     } else {
         ArrayPush(stringBuilderList, "We are playing as V.");
+
+        let pds = PlayerDevelopmentSystem.GetInstance(this);
+
+        if IsDefined(pds) {
+            let lifePath = pds.GetLifePath(this);
+
+            switch lifePath {
+                case gamedataLifePath.Corporate:
+                    ArrayPush(stringBuilderList, "V is a corpo.");
+                    break;
+                case gamedataLifePath.Nomad:
+                    ArrayPush(stringBuilderList, "V is a nomad.");
+                    break;
+                case gamedataLifePath.StreetKid:
+                    ArrayPush(stringBuilderList, "V is a streetkid.");
+                    break;
+                default:
+                    break;
+            }
+        }
     }
 
     let preventionSystem = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(NameOf<PreventionSystem>()) as PreventionSystem;
@@ -34,7 +54,7 @@ public func GetNeuroPlayerContext() -> String {
 
     if IsDefined(district) {
         let locked: ref<District> = district;
-        
+
         ArrayPush(stringBuilderList, s"The player is currently in \(GetLocalizedText(locked.GetDistrictRecord().LocalizedName())).");
     }
 
@@ -58,7 +78,7 @@ public func GetNeuroPlayerContext() -> String {
         } else {
             ArrayPush(stringBuilderList, "The player is a passenger in a vehicle.");
         }
-        
+
         ArrayPush(stringBuilderList, s"The vehicle is a \(GetLocalizedText(mountedVehicle.GetDisplayName())).");
     } else {
         ArrayPush(stringBuilderList, "The player is not currently in a vehicle.");
@@ -204,7 +224,7 @@ protected cb func OnKillRewardEvent(evt: ref<KillRewardEvent>) -> Bool {
                 GameInstance.GetNeuroSystem().SendContext("The player managed to kill themselves.");
             }
         }
-        
+
         let asPuppet = lock as ScriptedPuppet;
 
         if IsDefined(asPuppet) {

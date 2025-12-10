@@ -9,12 +9,12 @@ protected func UpdateDialogsData(const data: script_ref<DialogChoiceHubs>) -> Vo
 }
 
 @wrapMethod(BaseSubtitlesGameController)
-private final func SpawnDialogLine(const lineData: script_ref<scnDialogLineData>) -> Void {
-    let lineDataDeref = Deref(lineData);
+private final func SpawnDialogLine(const lineDataScriptRef: script_ref<scnDialogLineData>) -> Void {
+    let lineDataDeref = Deref(lineDataScriptRef);
     let speaker: ref<GameObject> = lineDataDeref.speaker;
 
     if !IsDefined(speaker) || lineDataDeref.isPersistent {
-        wrappedMethod(lineData);
+        wrappedMethod(lineDataDeref);
         return;
     }
 
@@ -33,10 +33,10 @@ private final func SpawnDialogLine(const lineData: script_ref<scnDialogLineData>
         }
     }
 
-    let line = lineData.text;
+    let line = lineDataDeref.text;
 
     if scnDialogLineData.HasKiroshiTag(lineDataDeref)
-        && this.IsKiroshiEnabled(lineData)
+        && this.IsKiroshiEnabled(lineDataDeref)
         || scnDialogLineData.HasMothertongueTag(lineDataDeref) {
         let displayText = lineDataDeref.GetDisplayText();
 
@@ -57,6 +57,6 @@ private final func SpawnDialogLine(const lineData: script_ref<scnDialogLineData>
 
     GameInstance.GetNeuroSystem().SendContext(neuroContext);
 
-    wrappedMethod(lineData);
+    wrappedMethod(lineDataDeref);
 }
 

@@ -4,7 +4,7 @@ module Neuro
 public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String {
     // Get a quest's data in a LLM-friendly fashion.
 
-    // Note: might be slow? Lots of string ops, best be careful, 
+    // Note: might be slow? Lots of string ops, best be careful,
     // maybe move to C++ if *too* slow
 
     // Not really slow on starting-ish save? Might get chuggier with more stuff
@@ -18,12 +18,35 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
     let journalWrapper = new JournalWrapper();
     journalWrapper.Init(GetGameInstance());
 
+    let descriptionStringBuilder: [String];
+    let uniqueDescriptions: [String];
+
+    let descriptionEntries = QuestLogUtils.GetDescriptions(this, asQuest);
+
+    for questDescEntryWeak in descriptionEntries {
+        let questDescEntry: ref<JournalQuestDescription> = questDescEntryWeak;
+
+        if IsDefined(questDescEntry) {
+            let descLocString = questDescEntry.GetDescription();
+
+            if !ArrayContains(uniqueDescriptions, descLocString) {
+                ArrayPush(uniqueDescriptions, descLocString);
+
+                let localizedText = GetLocalizedText(descLocString);
+
+                ArrayPush(descriptionStringBuilder, localizedText);
+            }
+        }
+    }
+
+    let description = StringUtils.BuildString(descriptionStringBuilder, "\r\n");
+
     // This might be slow, as it's very recursive
     // Good thing *most* of this will be running async!
     let questData = journalWrapper.BuildQuestData(asQuest);
     let districtRecord: ref<District_Record> = MappinUtils.GetDistrictRecord(questData.GetDistrict());
 
-    let baseData = s"Name: \(GetLocalizedText(questData.GetTitle())), type: \(questData.GetType())\r\nDescription:\r\n\(GetLocalizedText(questData.GetDescription()))";
+    let baseData = s"Name: \(GetLocalizedText(questData.GetTitle())), type: \(questData.GetType())\r\nDescription:\r\n\(description)";
 
     if IsDefined(districtRecord) {
         baseData += s"\r\nDistrict: \(GetLocalizedText(districtRecord.LocalizedName()))";
