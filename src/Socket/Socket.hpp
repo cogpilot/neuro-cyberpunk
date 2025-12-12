@@ -11,20 +11,11 @@ namespace neuro {
      * \brief Provides communication between AI and game.
      */
     struct NeuroSocket {
-        /**
-         * \brief A callback function type for responding to Neuro's actions. This should always call RespondToAction() at *some* point.
-         * 
-         * Note: aAction is NOT owned by the receiving function and keeping pointers to strings in it is a bad idea.
-         */
-        using NeuroActionProcessor = void (*)(const neurosdk_message_action_t& aAction, NeuroSocket& aSocket);
-
         // How many milliseconds can we poll until we should quit?
         static constexpr auto PollRateMs = 5;
 
         // Neuro API context
         neurosdk_context_t m_context;
-
-        NeuroActionProcessor m_callbackFunc;
 
         NeuroSocket();
         ~NeuroSocket();
@@ -61,16 +52,47 @@ namespace neuro {
 
         /**
          * \brief Poll Neuro's socket and check for new messages.
+         * 
+         * \param aClosure The processor function. NOTE: The strings in the action message are owned by the message and should be copied before use.
+         * 
          * \return Whether or not all operations succeeded. If this returns false, you should *probably* kill the socket and create a new one.
          */
-        bool Tick();
+        template<typename L>
+            requires Red::Detail::IsClosure<L, void, const neurosdk_message_action_t&>
+        bool Tick(L&& aClosure)
+        {
+            if (!IsAlive())
+            {
+                return false;
+            }
+
+            neurosdk_message_t* messageQueue{};
+            int messageCount{};
+            if (const auto status = neurosdk_context_poll(&m_context, &messageQueue, &messageCount);
+                status != NeuroSDK_None)
+            {
+                return false;
+            }
+
+            for (auto i = 0; i < messageCount; i++)
+            {
+                if (messageQueue[i].kind == NeuroSDK_MessageKind_Action)
+                {
+                    aClosure(messageQueue[i].value.action);
+                    // m_callbackFunc(messageQueue[i].value.action, *this);
+                    neurosdk_message_destroy(&messageQueue[i]);
+                }
+            }
+
+            return true;
+        }
 
         /**
          * \brief Create Neuro context and inform Neuro of capabilities.
          * \param aProcessor The callback function for handling Neuro's actions.
          * \return Whether or not initialization succeeded.
          */
-        bool Initialize(NeuroActionProcessor aProcessor);
+        bool Initialize();
 
         // Is context still OK?
         bool IsAlive();

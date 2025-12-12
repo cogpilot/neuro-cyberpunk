@@ -235,20 +235,19 @@ public:
 
 #pragma region NeuroHandlers
     /**
-     * \brief Handler for Neuro actions.
-     *
-     * \param aAction The action description sent by Neuro.
-     * \param aSocket The socket object.
-     */
-    static void DispatchNeuroAction(const neurosdk_message_action_t& aAction, neuro::NeuroSocket& aSocket);
-
-    /**
      * \brief Game state update function for RED4ext. This will always run on game main thread.
      *
      * \param aApplication A pointer to the game application.
      * \return False to signify the state should keep running.
      */
     static bool OnGameStateUpdate(Red::CGameApplication* aApplication);
+
+    /**
+     * \brief Handler for Neuro actions.
+     *
+     * \param aAction The action description sent by Neuro.
+     */
+    void DispatchNeuroAction(const neurosdk_message_action_t& aAction);
 
     /**
      * \brief Reset m_neuroSocket and attempt to initialize it.

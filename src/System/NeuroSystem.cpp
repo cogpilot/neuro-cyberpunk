@@ -444,7 +444,7 @@ void mod::NeuroForcedActionMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSo
     aSocket.SendForcedAction(m_actionName, m_query, m_state);
 }
 
-void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAction, neuro::NeuroSocket&)
+void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAction)
 {
     // Copy these in sync call - we do not own them
     auto response = MakeHandle<NeuroActionResponseMessage>();
@@ -455,24 +455,24 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
     {
         // In scope to not deadlock on pregame
         // Check if this is a forced action response
-        std::unique_lock lock(GetInstance()->m_messageLock);
-        if (GetInstance()->m_hasSentForcedActionMessage && response->IsResponseToForcedAction())
+        std::unique_lock lock(m_messageLock);
+        if (m_hasSentForcedActionMessage && response->IsResponseToForcedAction())
         {
             // If it is, drop the flag so we can send new forced action messages
-            GetInstance()->m_hasSentForcedActionMessage = false;
+            m_hasSentForcedActionMessage = false;
         }
     }
 
-    if (GetInstance()->IsPreGame())
+    if (IsPreGame())
     {
         // We cannot service Neuro's requests in pregame.
         response->m_actionResponse = "You are not yet ingame. Requests cannot be served";
-        GetInstance()->AddMessage(response);
+        AddMessage(response);
         return;
     }
 
     JobQueue().Dispatch(
-        [response = std::move(response)]()
+        [this, response = std::move(response)]()
         {
             util::Timestamp startTime{};
 
@@ -481,7 +481,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             {
             case CNAME_HASH("query_money"):
             {
-                if (!CallVirtual(GetInstance(), "OnQueryMoney", response->m_actionResponse))
+                if (!CallVirtual(this, "OnQueryMoney", response->m_actionResponse))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -489,7 +489,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("query_quest_context"):
             {
-                if (!CallVirtual(GetInstance(), "OnQueryTrackedQuest", response->m_actionResponse))
+                if (!CallVirtual(this, "OnQueryTrackedQuest", response->m_actionResponse))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -497,7 +497,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("query_all_quests"):
             {
-                if (!CallVirtual(GetInstance(), "OnQueryAllQuests", response->m_actionResponse))
+                if (!CallVirtual(this, "OnQueryAllQuests", response->m_actionResponse))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -505,7 +505,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("query_player_info"):
             {
-                if (!CallVirtual(GetInstance(), "OnQueryPlayerInfo", response->m_actionResponse))
+                if (!CallVirtual(this, "OnQueryPlayerInfo", response->m_actionResponse))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -513,7 +513,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("query_inventory"):
             {
-                if (!CallVirtual(GetInstance(), "OnQueryInventory", response->m_actionResponse))
+                if (!CallVirtual(this, "OnQueryInventory", response->m_actionResponse))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -526,7 +526,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("summon_car"):
             {
-                if (!CallVirtual(GetInstance(), "OnSummonVehicle", response->m_actionResponse))
+                if (!CallVirtual(this, "OnSummonVehicle", response->m_actionResponse))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -555,7 +555,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                         break;
                     }
 
-                    if (!CallVirtual(GetInstance(), "OnAutodriveToMappin", response->m_actionResponse, mappinId))
+                    if (!CallVirtual(this, "OnAutodriveToMappin", response->m_actionResponse, mappinId))
                     {
                         response->m_actionResponse = "Failed to call responder method.";
                     }
@@ -564,14 +564,14 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 {
                     CString districtName{json.target.c_str()};
 
-                    if (!CallVirtual(GetInstance(), "OnAutodriveToDistrict", response->m_actionResponse, districtName))
+                    if (!CallVirtual(this, "OnAutodriveToDistrict", response->m_actionResponse, districtName))
                     {
                         response->m_actionResponse = "Failed to call responder method.";
                     }
                 }
                 else if (json.destType == "tracked")
                 {
-                    if (!CallVirtual(GetInstance(), "OnAutodriveToTracked", response->m_actionResponse))
+                    if (!CallVirtual(this, "OnAutodriveToTracked", response->m_actionResponse))
                     {
                         response->m_actionResponse = "Failed to call responder method.";
                     }
@@ -592,9 +592,9 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
 
                 {
                     // Reset these
-                    std::unique_lock lock(GetInstance()->m_choicehubLock);
-                    GetInstance()->m_countdownToForcedChoiceSelectionStarted = false;
-                    GetInstance()->m_choiceHubAvailableTime = 0.f;
+                    std::unique_lock lock(m_choicehubLock);
+                    m_countdownToForcedChoiceSelectionStarted = false;
+                    m_choiceHubAvailableTime = 0.f;
                 }
 
                 // operator bool overload for glz::error_ctx returns true on failure!
@@ -604,7 +604,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                if (!CallVirtual(GetInstance(), "OnSelectDialogueChoice", response->m_actionResponse, json.id,
+                if (!CallVirtual(this, "OnSelectDialogueChoice", response->m_actionResponse, json.id,
                                  response->m_success))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
@@ -628,8 +628,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 }
 
                 // Ugly code, but should avoid lock
-                EntityID targetId =
-                    InterlockedExchange64((volatile long long*)(&GetInstance()->m_quickhackActionTargetId.hash), 0LL);
+                EntityID targetId = InterlockedExchange64((volatile long long*)(&m_quickhackActionTargetId.hash), 0LL);
 
                 if (!targetId)
                 {
@@ -638,7 +637,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                if (!CallVirtual(GetInstance(), "OnQuickhackTarget", response->m_actionResponse, targetId, json.id))
+                if (!CallVirtual(this, "OnQuickhackTarget", response->m_actionResponse, targetId, json.id))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -654,9 +653,9 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                std::unique_lock lock(GetInstance()->m_smsLock);
+                std::unique_lock lock(m_smsLock);
 
-                if (auto locked = GetInstance()->m_actionMessengerDialogViewController.Lock())
+                if (auto locked = m_actionMessengerDialogViewController.Lock())
                 {
                     if (!CallVirtual(locked, "MakeSyntheticMessageResponse", response->m_actionResponse, json.id))
                     {
@@ -677,7 +676,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
 
             // Add response to message queue
-            GetInstance()->AddMessage(response);
+            AddMessage(response);
 
             Context::Spew("Action '{}' handled in {} ms", response->m_actionName.c_str(),
                           startTime.TimePassedMs().count());
@@ -706,7 +705,7 @@ bool mod::NeuroSystem::InitializeConnection()
     m_neuroSocket.reset();
     m_neuroSocket = std::make_unique<neuro::NeuroSocket>();
 
-    return m_neuroSocket->Initialize(DispatchNeuroAction);
+    return m_neuroSocket->Initialize();
 }
 
 void mod::NeuroSystem::TickStateUpdate()
@@ -785,7 +784,8 @@ void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQu
                 return;
             }
 
-            if (!m_neuroSocket->Tick())
+            if (!m_neuroSocket->Tick([this](const neurosdk_message_action_t& aAction)
+                                     { DispatchNeuroAction(aAction); }))
             {
                 // Things are bad
                 m_neuroSocket.reset();

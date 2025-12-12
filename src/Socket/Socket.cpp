@@ -142,7 +142,6 @@ constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 
 neuro::NeuroSocket::NeuroSocket()
     : m_context(nullptr)
-    , m_callbackFunc(nullptr)
 {
 }
 
@@ -185,33 +184,7 @@ bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQu
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
 }
 
-bool neuro::NeuroSocket::Tick()
-{
-    if (!IsAlive())
-    {
-        return false;
-    }
-
-    neurosdk_message_t* messageQueue{};
-    int messageCount{};
-    if (const auto status = neurosdk_context_poll(&m_context, &messageQueue, &messageCount); status != NeuroSDK_None)
-    {
-        return false;
-    }
-
-    for (auto i = 0; i < messageCount; i++)
-    {
-        if (messageQueue[i].kind == NeuroSDK_MessageKind_Action)
-        {
-            m_callbackFunc(messageQueue[i].value.action, *this);
-            neurosdk_message_destroy(&messageQueue[i]);
-        }
-    }
-
-    return true;
-}
-
-bool neuro::NeuroSocket::Initialize(NeuroActionProcessor aProcessor)
+bool neuro::NeuroSocket::Initialize()
 {
     // Note: this is a FPS and we're polling every frame (which we shouldn't do, but...)
     // We can't have poll timeout be more than ~10ms without rethinking architecture
@@ -257,11 +230,9 @@ bool neuro::NeuroSocket::Initialize(NeuroActionProcessor aProcessor)
         return false;
     }
 
-    m_callbackFunc = aProcessor;
-
     return SendContext(
         "You are playing Cyberpunk 2077, an action RPG. Commands will only give reasonable output once you are ingame.",
-        true);
+        true) && IsAlive();
 }
 
 bool neuro::NeuroSocket::IsAlive()
