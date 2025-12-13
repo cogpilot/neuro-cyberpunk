@@ -940,9 +940,16 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 
 void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 {
-    static constexpr std::array<const char*, 6u> NoParameterActionNames = {"OnQueryMoney",     "OnQueryTrackedQuest",
-                                                                           "OnQueryAllQuests", "OnQueryPlayerInfo",
-                                                                           "OnQueryInventory", "OnQueryWaypoints"};
+    static constexpr const char* NoParameterActionNames[] = {
+                                                                            // "OnQueryMoney",     
+                                                                            // "OnQueryTrackedQuest",
+                                                                            // "OnQueryAllQuests", 
+                                                                            // "OnQueryPlayerInfo",
+                                                                            "OnQueryInventory", 
+                                                                            "OnQueryWaypoints"
+                                                                            };
+    static constexpr auto SizeOfTestedActionNames = ARRAYSIZE(NoParameterActionNames);
+
     aQueue.Dispatch(
         [this]()
         {
@@ -960,15 +967,6 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 
             const CName currentActionName = NoParameterActionNames[m_currentFuzzerFunction];
 
-            constexpr auto OutputDebugData = true;
-
-            if constexpr (OutputDebugData)
-            {
-                auto str = fmt::format("[Fuzzer] Last action {}\n", NoParameterActionNames[m_currentFuzzerFunction]);
-
-                OutputDebugStringA(str.c_str());
-            }
-
             // Unused
             Red::CString returnValue{};
 
@@ -981,7 +979,17 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
                 Context::Spew("[Fuzzer] Failed to call func {}!", currentActionName.ToString());
             }
 
-            m_currentFuzzerFunction = (m_currentFuzzerFunction + 1) % NoParameterActionNames.size();
+            m_currentFuzzerFunction = (m_currentFuzzerFunction + 1) % SizeOfTestedActionNames;
+            m_fuzzerCalls++;
+
+            constexpr auto OutputDebugData = true;
+
+            if constexpr (OutputDebugData)
+            {
+                auto str = fmt::format("[Fuzzer] Last action {}, total call count of queries: {}\n", NoParameterActionNames[m_currentFuzzerFunction], m_fuzzerCalls);
+
+                OutputDebugStringA(str.c_str());
+            }
         });
 }
 

@@ -221,7 +221,7 @@ public:
     bool m_countdownToForcedChoiceSelectionStarted{};
 
     NeuroSceneDataContext m_choiceHubDataContext{};
-    uint64_t m_lastChoiceHubDataHash{};
+    std::uint64_t m_lastChoiceHubDataHash{};
 #pragma endregion
 
 #pragma region QuickhackHandling
@@ -238,6 +238,7 @@ public:
 
     bool m_fuzzerActive{};
     int m_currentFuzzerFunction{};
+    std::uint64_t m_fuzzerCalls{};
 #pragma endregion
 
 #pragma region NeuroHandlers
