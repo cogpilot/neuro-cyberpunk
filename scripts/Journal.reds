@@ -2,13 +2,6 @@ module Neuro
 
 @addMethod(JournalManager)
 public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String {
-    // Get a quest's data in a LLM-friendly fashion.
-
-    // Note: might be slow? Lots of string ops, best be careful,
-    // maybe move to C++ if *too* slow
-
-    // Not really slow on starting-ish save? Might get chuggier with more stuff
-
     let asQuest: ref<JournalQuest> = questEntry as JournalQuest;
 
     if !IsDefined(asQuest) {

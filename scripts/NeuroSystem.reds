@@ -48,7 +48,7 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func OnSMSMessageDataProvided(data: ref<NeuroPhoneMessageDto>);
 
-    public native func OnSceneDialogChoiceHubsProvided(data: script_ref<DialogChoiceHubs>);
+    public native func OnSceneDialogChoiceHubsProvided(data: DialogChoiceHubs);
 
     public cb func OnConnectionFailure() -> Void {
         GameInstance
@@ -232,7 +232,7 @@ public native class NeuroSystem extends IGameSystem {
 
         let currAbsoluteChoiceId = 0;
         let totalChoiceCount = 0;
-    
+
         for hub in hubs.choiceHubs {
             totalChoiceCount += ArraySize(hub.choices);
         }
@@ -270,7 +270,10 @@ public native class NeuroSystem extends IGameSystem {
             }
         }
 
-        ModLog(n"Neuro", s"Absolute current choice ID: \(currAbsoluteChoiceId), relative: \(currentChoiceId)");
+        ModLog(
+            n"Neuro",
+            s"Absolute current choice ID: \(currAbsoluteChoiceId), relative: \(currentChoiceId)"
+        );
         let delta = id - currAbsoluteChoiceId;
 
         // Keys are hardcoded, you could try to dynamically resolve actions but NO

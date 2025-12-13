@@ -444,7 +444,7 @@ void mod::NeuroForcedActionMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSo
     aSocket.SendForcedAction(m_actionName, m_query, m_state);
 }
 
-void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAction)
+void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAction, const JobGroup& aJobGroup)
 {
     // Copy these in sync call - we do not own them
     auto response = MakeHandle<NeuroActionResponseMessage>();
@@ -471,7 +471,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
         return;
     }
 
-    JobQueue().Dispatch(
+    JobQueue(aJobGroup).Dispatch(
         [this, response = std::move(response)]()
         {
             util::Timestamp startTime{};
@@ -774,7 +774,7 @@ void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQu
     const auto dt = aFrameInfo.deltaTime;
 
     aJobQueue.Dispatch(
-        [this, dt]()
+        [this, dt](const JobGroup& aGroup)
         {
             std::unique_lock lock(m_socketLock);
 
@@ -784,8 +784,8 @@ void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQu
                 return;
             }
 
-            if (!m_neuroSocket->Tick([this](const neurosdk_message_action_t& aAction)
-                                     { DispatchNeuroAction(aAction); }))
+            if (!m_neuroSocket->Tick([this, &aGroup](const neurosdk_message_action_t& aAction)
+                                     { DispatchNeuroAction(aAction, aGroup); }))
             {
                 // Things are bad
                 m_neuroSocket.reset();
@@ -938,6 +938,53 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
         });
 }
 
+void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
+{
+    static constexpr std::array<const char*, 6u> NoParameterActionNames = {"OnQueryMoney",     "OnQueryTrackedQuest",
+                                                                           "OnQueryAllQuests", "OnQueryPlayerInfo",
+                                                                           "OnQueryInventory", "OnQueryWaypoints"};
+    aQueue.Dispatch(
+        [this]()
+        {
+            std::unique_lock lock(m_fuzzerLock);
+
+            if (!m_fuzzerActive)
+            {
+                return;
+            }
+
+            if (IsPreGame())
+            {
+                return;
+            }
+
+            const CName currentActionName = NoParameterActionNames[m_currentFuzzerFunction];
+
+            constexpr auto OutputDebugData = true;
+
+            if constexpr (OutputDebugData)
+            {
+                auto str = fmt::format("[Fuzzer] Last action {}\n", NoParameterActionNames[m_currentFuzzerFunction]);
+
+                OutputDebugStringA(str.c_str());
+            }
+
+            // Unused
+            Red::CString returnValue{};
+
+            if (currentActionName == CNAME_HASH("OnQueryWaypoints"))
+            {
+                returnValue = NeuroResponses::CreateMappinQueryResponse();
+            }
+            else if (!CallVirtual(this, currentActionName, returnValue))
+            {
+                Context::Spew("[Fuzzer] Failed to call func {}!", currentActionName.ToString());
+            }
+
+            m_currentFuzzerFunction = (m_currentFuzzerFunction + 1) % NoParameterActionNames.size();
+        });
+}
+
 void mod::NeuroSystem::AddMessage(const Handle<NeuroMessage>& aMsg)
 {
     std::unique_lock lock(m_messageLock);
@@ -1006,13 +1053,14 @@ void mod::NeuroSystem::InjectKeypressChain(const Red::DynArray<Red::EInputKey>& 
     }
 }
 
-void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(Red::ScriptRef<game::interactions::vis::DialogChoiceHubs>& aRef)
+void mod::NeuroSystem::ToggleFuzzer()
 {
-    if (!aRef)
-    {
-        return;
-    }
+    std::unique_lock lock(m_fuzzerLock);
+    m_fuzzerActive = !m_fuzzerActive;
+}
 
+void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::DialogChoiceHubs aRef)
+{
     auto neuroChoiceId = 0;
 
     static auto LocalizationSystem = shared::raw::Localization::LocalizationSystem::GetInstance();
@@ -1020,7 +1068,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(Red::ScriptRef<game::inte
     std::unique_lock lock(m_choicehubLock);
     m_choiceHubDataContext.m_choices.clear();
 
-    if (aRef->choiceHubs.size == 0u)
+    if (aRef.choiceHubs.size == 0u)
     {
         // Empty hub...
         if (m_countdownToForcedChoiceSelectionStarted)
@@ -1038,7 +1086,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(Red::ScriptRef<game::inte
     // Just in case - though in practice this should not be hit
     auto hasAtLeastOneAvailable = false;
 
-    for (auto& hub : aRef->choiceHubs)
+    for (auto& hub : aRef.choiceHubs)
     {
         auto isTimed = false;
         auto timer = 0.f;
@@ -1173,9 +1221,11 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
     // aRegistrar->RegisterUpdate(UpdateTickGroup::PreRenderUpdate, this, "NeuroSystem/Communicate",
     //                            [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue) { Tick(aFrameInfo, aJobQueue); });
 
-    aRegistrar->RegisterUpdate(UpdateTickGroup::PreBuckets, this, "NeuroSystem/Tick",
-                               [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue)
+    aRegistrar->RegisterUpdate(UpdateBucketMask::Character, UpdateBucketStage::Entities_PostTick, this,
+                               "NeuroSystem/Tick",
+                               [this](UpdateBucketEnum aUpdateBucket, FrameInfo& aFrameInfo, JobQueue& aJobQueue)
                                {
+                                   TickFuzzer(aJobQueue);
                                    TickInputQueue(aFrameInfo);
                                    TickSceneInfo(aFrameInfo, aJobQueue);
                                    TickCommunication(aFrameInfo, aJobQueue);
@@ -1258,6 +1308,7 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(OnSMSMessageDataProvided);
     RTTI_METHOD(ResetBadConnectionCounter);
     RTTI_METHOD(OnSceneDialogChoiceHubsProvided);
+    RTTI_METHOD(ToggleFuzzer);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroMessage, { RTTI_ABSTRACT(); });

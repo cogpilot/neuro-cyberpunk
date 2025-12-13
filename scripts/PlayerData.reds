@@ -59,8 +59,8 @@ public func GetNeuroPlayerContext() -> String {
     }
 
     ArrayPush(stringBuilderList, s"The player has \(hp)/\(maxHp) health.");
-
-    let gender = StrLower(NameToString(this.GetResolvedGenderName()));
+    let nonLoweredGender = NameToString(this.GetResolvedGenderName());
+    let gender = StrLower(nonLoweredGender);
 
     ArrayPush(stringBuilderList, s"The player is \(gender).");
 
@@ -79,7 +79,9 @@ public func GetNeuroPlayerContext() -> String {
             ArrayPush(stringBuilderList, "The player is a passenger in a vehicle.");
         }
 
-        ArrayPush(stringBuilderList, s"The vehicle is a \(GetLocalizedText(mountedVehicle.GetDisplayName())).");
+        let displayName = mountedVehicle.GetDisplayName();
+        let localizedDisplayName = GetLocalizedText(displayName);
+        ArrayPush(stringBuilderList, s"The vehicle is a \(localizedDisplayName).");
     } else {
         ArrayPush(stringBuilderList, "The player is not currently in a vehicle.");
     }

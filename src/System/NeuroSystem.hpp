@@ -232,6 +232,13 @@ public:
     Red::SharedSpinLock m_smsLock{};
     Red::WeakHandle<Red::IScriptable> m_actionMessengerDialogViewController{};
 #pragma endregion
+   
+#pragma region Fuzzer
+    Red::SharedSpinLock m_fuzzerLock{};
+
+    bool m_fuzzerActive{};
+    int m_currentFuzzerFunction{};
+#pragma endregion
 
 #pragma region NeuroHandlers
     /**
@@ -246,8 +253,9 @@ public:
      * \brief Handler for Neuro actions.
      *
      * \param aAction The action description sent by Neuro.
+     * \param aJobGroup The parent job group.
      */
-    void DispatchNeuroAction(const neurosdk_message_action_t& aAction);
+    void DispatchNeuroAction(const neurosdk_message_action_t& aAction, const Red::JobGroup& aJobGroup);
 
     /**
      * \brief Reset m_neuroSocket and attempt to initialize it.
@@ -281,6 +289,12 @@ public:
      * \param aJobQueue The job queue provided by the update registrar.
      */
     void TickSceneInfo(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
+
+    /**
+    * \brief Tick function registered by update registrar to spam functions to stress test responses for races/whatnot.
+    * \param aQueue The associated frame job queue.
+    */
+    void TickFuzzer(Red::JobQueue& aQueue);
 
     /**
      * \brief Add a message for Neuro to the message queue.
@@ -344,6 +358,11 @@ public:
      * \param aKeys The keys to inject in sequence.
      */
     void InjectKeypressChain(const Red::DynArray<Red::EInputKey>& aKeys);
+
+    /**
+    * \brief Toggle the query action fuzzer. Available via RTTI as well.
+    */
+    void ToggleFuzzer();
 #pragma endregion
 
 #pragma region ScriptingUtils
@@ -358,7 +377,7 @@ public:
      * \brief Update current choicehub state and reset timer before sending current choicehub info to Neuro.
      * \param aRef The dialog data.
      */
-    void OnSceneDialogChoiceHubsProvided(Red::ScriptRef<Red::game::interactions::vis::DialogChoiceHubs>& aRef);
+    void OnSceneDialogChoiceHubsProvided(Red::game::interactions::vis::DialogChoiceHubs aRef);
 
     /**
      * \brief Check if the forced action cooldown is active. Used for quickhack handling due to special handling of
