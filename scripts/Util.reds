@@ -1,21 +1,5 @@
-module Neuro
-
-public class StringUtils {
-    // This could probably be more efficient native, but why bother?
-    public static func BuildString(parts: [String], delim: String) -> String {
-        let i = 0;
-        let sz = ArraySize(parts);
-        let str = "";
-        while i < sz {
-            str += parts[i];
-            if i < sz - 1 {
-                str += delim;
-            }
-            i += 1;
-        }
-
-        return str;
-    }
+public native class StringUtils {
+    public static native func BuildString(parts: [String], delim: String) -> String;
 }
 
 @addMethod(ScriptedPuppet)

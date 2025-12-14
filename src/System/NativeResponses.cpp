@@ -125,33 +125,31 @@ CString GetMappinDisplayName(Handle<IMappin>& aMappin)
 
         shared::raw::JournalManager::GetEntryByHash(journalManager, entry, pathHash);
 
-        WeakHandle<JournalEntry> weakEntry = entry;
-
         if (entry)
         {
             if (const auto& asQuestMapPin = Cast<game::JournalQuestMapPin>(entry))
             {
-                WeakHandle<JournalEntry> objEntry{};
-                shared::raw::JournalManager::GetParentEntry(journalManager, objEntry, weakEntry);
-                if (auto entry = Cast<JournalQuestObjective>(objEntry.Lock()))
+                Handle<JournalEntry> objEntry{};
+                shared::raw::JournalManager::GetParentEntry(journalManager, objEntry, entry);
+                if (auto entry = Cast<JournalQuestObjective>(objEntry))
                 {
                     if (shared::raw::JournalManager::GetEntryState(journalManager, entry) ==
                         game::JournalEntryState::Inactive)
                     {
                         return "Undiscovered quest...";
                     }
-                    WeakHandle<JournalEntry> objPhase{};
+                    Handle<JournalEntry> objPhase{};
                     shared::raw::JournalManager::GetParentEntry(journalManager, objPhase, objEntry);
-                    if (auto phase = Cast<JournalQuestPhase>(objPhase.Lock()))
+                    if (auto phase = Cast<JournalQuestPhase>(objPhase))
                     {
                         if (shared::raw::JournalManager::GetEntryState(journalManager, phase) ==
                             game::JournalEntryState::Inactive)
                         {
                             return "Undiscovered quest...";
                         }
-                        WeakHandle<JournalEntry> objQuest{};
+                        Handle<JournalEntry> objQuest{};
                         shared::raw::JournalManager::GetParentEntry(journalManager, objQuest, objPhase);
-                        if (auto quest = Cast<JournalQuest>(objQuest.Lock()))
+                        if (auto quest = Cast<JournalQuest>(objQuest))
                         {
                             if (shared::raw::JournalManager::GetEntryState(journalManager, quest) ==
                                 game::JournalEntryState::Inactive)

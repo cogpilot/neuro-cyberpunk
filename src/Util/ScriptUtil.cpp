@@ -27,7 +27,7 @@ public:
             return "";
         }
 
-        constexpr auto WhineAboutAllocationSizes = true;
+        constexpr auto WhineAboutAllocationSizes = false;
 
         if constexpr (WhineAboutAllocationSizes)
         {
@@ -36,8 +36,6 @@ public:
 
         // This is not a good way, but yeah
         DynArray<char> retBuffer{};
-
-        // Hack!
         retBuffer.Reserve(len + 1u);
 
         for (auto i = 0u; i < aParts.size; i++)
@@ -56,7 +54,7 @@ public:
             }
         }
 
-        retBuffer[retBuffer.size - 1] = '\0';
+        retBuffer.PushBack('\0');
 
         return CString(retBuffer.entries);
     }

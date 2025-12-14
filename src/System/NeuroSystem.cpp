@@ -941,10 +941,10 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 {
     static constexpr const char* NoParameterActionNames[] = {
-                                                                            // "OnQueryMoney",     
-                                                                            // "OnQueryTrackedQuest",
-                                                                            // "OnQueryAllQuests", 
-                                                                            // "OnQueryPlayerInfo",
+                                                                            "OnQueryMoney",     
+                                                                            "OnQueryTrackedQuest",
+                                                                            "OnQueryAllQuests", 
+                                                                            "OnQueryPlayerInfo",
                                                                             "OnQueryInventory", 
                                                                             "OnQueryWaypoints"
                                                                             };
@@ -968,7 +968,7 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
             const CName currentActionName = NoParameterActionNames[m_currentFuzzerFunction];
 
             // Unused
-            Red::CString returnValue{};
+            CString returnValue{};
 
             if (currentActionName == CNAME_HASH("OnQueryWaypoints"))
             {
