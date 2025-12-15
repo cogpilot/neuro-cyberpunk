@@ -476,6 +476,8 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
         {
             util::Timestamp startTime{};
 
+            CallVirtual(this, "OnLogNeuroAction", response->m_actionName);
+
             // Handle action
             switch (CNAME_HASH(response->m_actionName.c_str()))
             {
@@ -940,14 +942,9 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 
 void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 {
-    static constexpr const char* NoParameterActionNames[] = {
-                                                                            "OnQueryMoney",     
-                                                                            "OnQueryTrackedQuest",
-                                                                            "OnQueryAllQuests", 
-                                                                            "OnQueryPlayerInfo",
-                                                                            "OnQueryInventory", 
-                                                                            "OnQueryWaypoints"
-                                                                            };
+    static constexpr const char* NoParameterActionNames[] = {"OnQueryMoney",     "OnQueryTrackedQuest",
+                                                             "OnQueryAllQuests", "OnQueryPlayerInfo",
+                                                             "OnQueryInventory", "OnQueryWaypoints"};
     static constexpr auto SizeOfTestedActionNames = ARRAYSIZE(NoParameterActionNames);
 
     aQueue.Dispatch(
@@ -986,7 +983,8 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 
             if constexpr (OutputDebugData)
             {
-                auto str = fmt::format("[Fuzzer] Last action {}, total call count of queries: {}\n", NoParameterActionNames[m_currentFuzzerFunction], m_fuzzerCalls);
+                auto str = fmt::format("[Fuzzer] Last action {}, total call count of queries: {}\n",
+                                       NoParameterActionNames[m_currentFuzzerFunction], m_fuzzerCalls);
 
                 OutputDebugStringA(str.c_str());
             }

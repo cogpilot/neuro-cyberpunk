@@ -588,6 +588,12 @@ public native class NeuroSystem extends IGameSystem {
 
         return str;
     }
+
+    public cb func OnLogNeuroAction(actionName: String) -> Void {
+        // NOTE: can be done in native, but fmt is more problematic in native :(
+        let str = s"Neuro used action \(actionName)";
+        GameInstance.GetActivityLogSystem(GetGameInstance()).AddLog(str);
+    }
 }
 
 @addMethod(GameInstance)
