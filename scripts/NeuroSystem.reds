@@ -50,6 +50,12 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func OnSceneDialogChoiceHubsProvided(data: DialogChoiceHubs);
 
+    public native func IsConnectionAlive() -> Bool;
+
+    public native func RegisterAliveCallback(ctx: wref<IScriptable>) -> Void;
+
+    public native func UnregisterAliveCallback(ctx: wref<IScriptable>) -> Void;
+
     public cb func OnConnectionFailure() -> Void {
         GameInstance
             .GetSystemRequestsHandler()

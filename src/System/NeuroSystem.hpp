@@ -241,6 +241,11 @@ public:
     std::uint64_t m_fuzzerCalls{};
 #pragma endregion
 
+#pragma region Callbacks
+    Red::SharedSpinLock m_callbackLock{};
+    Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_callbackList{};
+#pragma endregion
+
 #pragma region NeuroHandlers
     /**
      * \brief Game state update function for RED4ext. This will always run on game main thread.
@@ -403,6 +408,23 @@ public:
      * \brief Reset the bad connection counter to allow retry for Neuro socket.
      */
     void ResetBadConnectionCounter();
+
+    /**
+    * \brief Check if Neuro connection is alive.
+    */
+    bool IsConnectionAlive();
+
+    /**
+    * \brief Register a callback for Neuro socket connection state. The function name is fixed as "OnNeuroSocketUpdate"
+    * \param aContext The object the callback is owned by.
+    */
+    void RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext);
+
+    /**
+     * \brief Unregister a callback for Neuro socket connection state.
+     * \param aContext The object the callback is owned by.
+     */
+    void UnregisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext);
 #pragma endregion
 
 #pragma region Overrides

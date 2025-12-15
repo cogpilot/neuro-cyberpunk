@@ -755,6 +755,16 @@ void mod::NeuroSystem::TickStateUpdate()
     // If it's the first tick after connection, inform Neuro about the game state and if she can make commands
     if (firstTick)
     {
+        std::unique_lock lock(m_callbackLock);
+
+        for (const auto& i : m_callbackList)
+        {
+            if (auto locked = i.Lock())
+            {
+                CallVirtual(locked, "OnNeuroSocketUpdate", true);
+            }
+        }
+
         m_hasHadSuccessfulConnection = true;
         if (!IsPreGame())
         {
@@ -793,6 +803,17 @@ void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQu
                 m_neuroSocket.reset();
                 m_lastRetryTime = {};
                 m_failedToConnectBefore = true;
+
+                std::unique_lock lock(m_callbackLock);
+
+                for (const auto& i : m_callbackList)
+                {
+                    if (auto locked = i.Lock())
+                    {
+                        CallVirtual(locked, "OnNeuroSocketUpdate", false);
+                    }
+                }
+
                 return;
             }
 
@@ -1220,6 +1241,31 @@ void mod::NeuroSystem::ResetBadConnectionCounter()
     m_firstConnectionAttempts = 0;
 }
 
+bool mod::NeuroSystem::IsConnectionAlive()
+{
+    std::unique_lock lock(m_socketLock);
+    return !!m_neuroSocket;
+}
+
+void mod::NeuroSystem::RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext)
+{
+    std::unique_lock lock(m_callbackLock);
+    m_callbackList.PushBack(aContext);
+}
+
+void mod::NeuroSystem::UnregisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext)
+{
+    std::unique_lock lock(m_callbackLock);
+    for (auto i = 0u; i < m_callbackList.size; i++)
+    {
+        if (m_callbackList[i].instance == aContext.instance)
+        {
+            m_callbackList.RemoveAt(i);
+            break;
+        }
+    }
+}
+
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
 {
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
@@ -1315,6 +1361,9 @@ RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(ResetBadConnectionCounter);
     RTTI_METHOD(OnSceneDialogChoiceHubsProvided);
     RTTI_METHOD(ToggleFuzzer);
+    RTTI_METHOD(IsConnectionAlive);
+    RTTI_METHOD(RegisterAliveCallback);
+    RTTI_METHOD(UnregisterAliveCallback);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroMessage, { RTTI_ABSTRACT(); });
