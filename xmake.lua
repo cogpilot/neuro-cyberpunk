@@ -1,6 +1,6 @@
 set_project("NeuroInteractions")
 
-set_version("0.0.7", { build = "%y%m%d%H" })
+set_version("0.0.8", { build = "%y%m%d%H" })
 
 set_plat("windows")
 set_arch("x64")
