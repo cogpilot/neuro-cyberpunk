@@ -755,16 +755,7 @@ void mod::NeuroSystem::TickStateUpdate()
     // If it's the first tick after connection, inform Neuro about the game state and if she can make commands
     if (firstTick)
     {
-        std::unique_lock lock(m_callbackLock);
-
-        for (const auto& i : m_callbackList)
-        {
-            if (auto locked = i.Lock())
-            {
-                CallVirtual(locked, "OnNeuroSocketUpdate", true);
-            }
-        }
-
+        m_isFirstTick = true;
         m_hasHadSuccessfulConnection = true;
         if (!IsPreGame())
         {
@@ -793,6 +784,8 @@ void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQu
             if (!m_neuroSocket)
             {
                 // Note: In this case, message queue will be drained by the main thread
+                // Nonetheless, fire all pending callbacks
+                FirePendingCallbacks(false);
                 return;
             }
 
@@ -804,17 +797,19 @@ void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQu
                 m_lastRetryTime = {};
                 m_failedToConnectBefore = true;
 
-                std::unique_lock lock(m_callbackLock);
-
-                for (const auto& i : m_callbackList)
-                {
-                    if (auto locked = i.Lock())
-                    {
-                        CallVirtual(locked, "OnNeuroSocketUpdate", false);
-                    }
-                }
+                FirePendingCallbacks(false);
+                FireScriptCallbacks(false);
 
                 return;
+            }
+
+            FirePendingCallbacks(true);
+
+            if (m_isFirstTick)
+            {
+                // Do this here because Tick() starts executing after start screen
+                FireScriptCallbacks(true);
+                m_isFirstTick = false;
             }
 
             // Drain message queue
@@ -1046,6 +1041,35 @@ void mod::NeuroSystem::SendContextSilent(const CString& aContextInfo)
     AddMessage(msg);
 }
 
+void mod::NeuroSystem::FireScriptCallbacks(bool aState)
+{
+    std::unique_lock lock(m_callbackLock);
+
+    for (auto& i : m_callbackList)
+    {
+        if (auto locked = i.Lock())
+        {
+            CallVirtual(locked, "OnNeuroSocketUpdate", aState);
+        }
+    }
+}
+
+void mod::NeuroSystem::FirePendingCallbacks(bool aState)
+{
+    std::unique_lock lock(m_callbackLock);
+
+    for (auto& i : m_newCallbackList)
+    {
+        if (auto locked = i.Lock())
+        {
+            CallVirtual(locked, "OnNeuroSocketUpdate", aState);
+        }
+    }
+
+    m_newCallbackList.Clear();
+}
+
+
 bool mod::NeuroSystem::IsPreGame()
 {
     auto handler = shared::raw::Ink::InkSystem::Get()->m_requestsHandler.Lock();
@@ -1251,6 +1275,7 @@ void mod::NeuroSystem::RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> a
 {
     std::unique_lock lock(m_callbackLock);
     m_callbackList.PushBack(aContext);
+    m_newCallbackList.PushBack(aContext);
 }
 
 void mod::NeuroSystem::UnregisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext)

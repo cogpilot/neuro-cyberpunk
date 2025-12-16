@@ -186,6 +186,9 @@ public:
     // If we cannot establish a link to Neuro, disable further connection attempts
     bool m_disableConnection{};
 
+    // Is this the first tick we have access to Neuro? (for script callbacks)
+    bool m_isFirstTick{};
+
     // Last reconnection retry time if we don't have a socket
     util::Timestamp m_lastRetryTime{};
 #pragma endregion
@@ -244,6 +247,7 @@ public:
 #pragma region Callbacks
     Red::SharedSpinLock m_callbackLock{};
     Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_callbackList{};
+    Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_newCallbackList{};
 #pragma endregion
 
 #pragma region NeuroHandlers
@@ -333,6 +337,18 @@ public:
      * \param aContextInfo The specified context.
      */
     void SendContextSilent(const Red::CString& aContextInfo);
+
+    /**
+     * \brief Fire all registered script callbacks for Neuro connection state.
+     * \param aState The current connection state.
+     */
+    void FireScriptCallbacks(bool aState);
+
+    /**
+     * \brief Fire all newly registered callbacks with Neuro connection state and clean the newly registered callback list.
+     * \param aState The current connection state.
+     */
+    void FirePendingCallbacks(bool aState);
 #pragma endregion
 
 #pragma region Util
@@ -415,7 +431,8 @@ public:
     bool IsConnectionAlive();
 
     /**
-    * \brief Register a callback for Neuro socket connection state. The function name is fixed as "OnNeuroSocketUpdate"
+    * \brief Register a callback for Neuro socket connection state. The function name is fixed as "OnNeuroSocketUpdate".
+    * New callbacks will have this fired the next tick. The function may be called several times in one tick.
     * \param aContext The object the callback is owned by.
     */
     void RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext);
