@@ -441,7 +441,7 @@ void mod::NeuroContextMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
 
 void mod::NeuroForcedActionMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
 {
-    aSocket.SendForcedAction(m_actionName, m_query, m_state);
+    aSocket.SendForcedAction(m_actionName, m_query, m_state, m_priority);
 }
 
 void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAction, const JobGroup& aJobGroup)
@@ -939,6 +939,16 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 
             std::string json{};
 
+            bool isTimed = false;
+            for (const auto& choice : m_choiceHubDataContext.m_choices)
+            {
+                if (choice.m_isTimed)
+                {
+                    isTimed = true;
+                    break;
+                }
+            }
+
             if (glz::write_json(m_choiceHubDataContext.m_choices, json))
             {
                 return;
@@ -951,6 +961,11 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
                            "invalidated (for instance, the player walks away or a timer runs out) or you make a valid "
                            "choice. The choice options are provided via context.";
             msg->m_state = json.c_str();
+
+            if (isTimed)
+            {
+                msg->m_priority = "high";
+            }
 
             AddMessage(msg);
         });

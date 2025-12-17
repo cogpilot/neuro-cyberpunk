@@ -111,6 +111,9 @@ public:
     // A short description of what Neuro should do.
     Red::CString m_query{};
 
+    // The priority of the action (low, medium, high).
+    Red::CString m_priority{"medium"};
+
     void DispatchNeuroMessage(neuro::NeuroSocket& aSocket) override;
 
     // I think ephemeral actions are kind of boring and Neuro should react to what she's being asked to do, so...

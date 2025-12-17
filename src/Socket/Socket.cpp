@@ -170,13 +170,14 @@ bool neuro::NeuroSocket::SendContext(StringView aContext, bool aSilent)
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
 }
 
-bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQuery, StringView aState)
+bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQuery, StringView aState, StringView aPriority)
 {
     const char* tempActionNames[] = {aActionName.Data()};
 
     neurosdk_message_t msg{.kind = NeuroSDK_MessageKind_ActionsForce,
                            .value = {.actions_force = {.state = aState.Data(),
                                                        .query = aQuery.Data(),
+                                                       .priority = aPriority.Data(),
                                                        .ephemeral_context = false,
                                                        .action_names = tempActionNames,
                                                        .action_names_len = 1}}};

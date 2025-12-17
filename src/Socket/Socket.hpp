@@ -48,7 +48,7 @@ namespace neuro {
          * 
          * \return The success of the operation.
          */
-        bool SendForcedAction(Red::StringView aActionName, Red::StringView aQuery, Red::StringView aState);
+        bool SendForcedAction(Red::StringView aActionName, Red::StringView aQuery, Red::StringView aState, Red::StringView aPriority = "medium");
 
         /**
          * \brief Poll Neuro's socket and check for new messages.
