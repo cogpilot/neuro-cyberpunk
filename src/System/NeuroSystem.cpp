@@ -1152,6 +1152,9 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
     // Just in case - though in practice this should not be hit
     auto hasAtLeastOneAvailable = false;
 
+    // Note: this is used to improve Neuro's performance with timed choices
+    auto delayTimerForForcedAction = ChoicehubDelayBeforeForcedAction;
+
     for (auto& hub : aRef.choiceHubs)
     {
         auto isTimed = false;
@@ -1168,6 +1171,14 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
 
             isTimed = true;
             timer = VisualizerGetDuration(timeProvider) - VisualizerGetProgress(timeProvider);
+
+            // Halved just in case
+            auto delayTime = timer * 0.5;
+
+            if (delayTimerForForcedAction > delayTime)
+            {
+                delayTimerForForcedAction = delayTime;
+            }
         }
 
         for (auto& choice : hub.choices)
@@ -1207,7 +1218,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
 
     if (hasAtLeastOneAvailable)
     {
-        m_choiceHubAvailableTime = ChoicehubDelayBeforeForcedAction;
+        m_choiceHubAvailableTime = delayTimerForForcedAction;
         m_countdownToForcedChoiceSelectionStarted = true;
     }
 }
