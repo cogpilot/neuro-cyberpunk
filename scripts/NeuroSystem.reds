@@ -302,7 +302,7 @@ public native class NeuroSystem extends IGameSystem {
         this.InjectKeypressChain(chain);
 
         success = true;
-        return "You have chosen a dialogue choice, which your player in-game will now perform.";
+        return "You have chosen a dialogue choice, which your player in-game will now perform. Limit your reaction to one sentence.";
     }
 
     public cb func OnAutodriveToMappin(mappinId: NewMappinID) -> String {

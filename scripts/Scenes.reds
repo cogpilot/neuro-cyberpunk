@@ -55,7 +55,7 @@ private final func SpawnDialogLine(const lineDataScriptRef: script_ref<scnDialog
 
     let neuroContext = s"Dialogue: [Type \(lineDataDeref.type)] \(localizedSpeakerName) says \"\(line)\"";
 
-    GameInstance.GetNeuroSystem().SendContext(neuroContext);
+    GameInstance.GetNeuroSystem().SendContextSilent(neuroContext);
 
     wrappedMethod(lineDataDeref);
 }
