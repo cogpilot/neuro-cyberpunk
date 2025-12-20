@@ -962,10 +962,10 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
                            "choice. The choice options are provided via context.";
             msg->m_state = json.c_str();
 
-            if (isTimed)
-            {
-                msg->m_priority = "high";
-            }
+            // if (isTimed)
+            // {
+            //      msg->m_priority = "high";
+            // }
 
             AddMessage(msg);
         });
