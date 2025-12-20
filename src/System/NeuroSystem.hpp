@@ -111,7 +111,7 @@ public:
     // A short description of what Neuro should do.
     Red::CString m_query{};
 
-    // The priority of the action (low, medium, high).
+    // The priority of the action (low, medium, high, critical).
     Red::CString m_priority{"medium"};
 
     void DispatchNeuroMessage(neuro::NeuroSocket& aSocket) override;
