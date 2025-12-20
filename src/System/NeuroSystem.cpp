@@ -1160,7 +1160,9 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
         auto isTimed = false;
         auto timer = 0.f;
         auto title = LocalizationSystem->GetOnscreen(hub.title);
-
+        
+        // Note: I don't know if all choicehub used time providers are global per hub
+        // Some problematic QTEs during stream but it seems to be fine here?
         if (auto timeProvider = hub.timeProvider.Lock())
         {
             constexpr auto VisualizerGetDuration =
@@ -1173,7 +1175,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
             timer = VisualizerGetDuration(timeProvider) - VisualizerGetProgress(timeProvider);
 
             // Halved just in case
-            auto delayTime = timer * 0.5;
+            auto delayTime = timer * 0.5f;
 
             if (delayTimerForForcedAction > delayTime)
             {
