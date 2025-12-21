@@ -135,7 +135,7 @@ struct NeuroChoiceContext
     bool m_isTimed{};
     float m_timer{};
 
-    static NeuroChoiceContext FromGameData(Red::game::interactions::vis::ListChoiceData& aChoiceData, Red::CString& aHubTitle, int aId, bool aIsTimed, float aChoiceTimer);
+    static NeuroChoiceContext FromGameData(const Red::game::interactions::vis::ListChoiceData& aChoiceData, Red::CString& aHubTitle, int aId, bool aIsTimed, float aChoiceTimer);
 };
 
 /**

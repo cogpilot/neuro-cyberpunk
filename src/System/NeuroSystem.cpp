@@ -1006,7 +1006,9 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 {
     static constexpr const char* NoParameterActionNames[] = {"OnQueryMoney",     "OnQueryTrackedQuest",
                                                              "OnQueryAllQuests", "OnQueryPlayerInfo",
-                                                             "OnQueryInventory", "OnQueryWaypoints"};
+                                                             "OnQueryInventory",
+                                                             "OnQueryWaypoints",
+                                                             "OnQueryQuickhackTargets"};
     static constexpr auto SizeOfTestedActionNames = ARRAYSIZE(NoParameterActionNames);
 
     aQueue.Dispatch(
@@ -1032,6 +1034,14 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
             if (currentActionName == CNAME_HASH("OnQueryWaypoints"))
             {
                 returnValue = NeuroResponses::CreateMappinQueryResponse();
+            }
+            else if (currentActionName == CNAME_HASH("OnQueryQuickhackTargets"))
+            {
+                DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+                if (!CallVirtual(this, currentActionName, quickhackDataArray))
+                {
+                    Context::Spew("[Fuzzer] Failed to call func {}!", NoParameterActionNames[m_currentFuzzerFunction]);
+                }
             }
             else if (!CallVirtual(this, currentActionName, returnValue))
             {

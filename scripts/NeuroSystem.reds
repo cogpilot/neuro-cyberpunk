@@ -564,6 +564,16 @@ public native class NeuroSystem extends IGameSystem {
         return StringUtils.BuildString(stringBuilder, "\r\n");
     }
 
+    public cb func OnQueryQuickhackTargets() -> [ref<NeuroQuickhackDataDto>] {
+        let player = GetPlayer(GetGameInstance());
+
+        if !IsDefined(player) {
+            return [];
+        }
+
+        return player.GetQuickhackableTargetsForNeuro();
+    }
+
     public func TranslateItemIdToNeuroDesc(owner: ref<PlayerPuppet>, id: ItemID) -> String {
         let transactionSystem = GameInstance.GetTransactionSystem(GetGameInstance());
 
