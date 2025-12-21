@@ -145,6 +145,8 @@ struct NeuroQuickhackJson
 
 struct NeuroQuickhackDataJson
 {
+    std::uint64_t entityId{};
+
     std::string targetName{};
     std::string faction{};
 
@@ -156,10 +158,11 @@ struct NeuroQuickhackDataJson
 
     std::vector<NeuroQuickhackJson> quickhacks{};
 
-    static NeuroQuickhackDataJson FromGame(Handle<NeuroQuickhackDataDto>& aData)
+    static NeuroQuickhackDataJson FromGame(const Handle<NeuroQuickhackDataDto>& aData)
     {
         NeuroQuickhackDataJson json{};
 
+        json.entityId = aData->m_targetEntityId.hash;
         json.targetName = aData->m_targetName.c_str();
         json.faction = aData->m_faction.c_str();
         json.ramAmount = aData->m_ramAmount;
@@ -209,7 +212,7 @@ struct NeuroSMSJson
 
     std::vector<NeuroSMSChoiceEntryJson> choices{};
 
-    static NeuroSMSJson FromGame(Handle<NeuroPhoneMessageDto>& aData)
+    static NeuroSMSJson FromGame(const Handle<NeuroPhoneMessageDto>& aData)
     {
         NeuroSMSJson ret{};
 
@@ -243,7 +246,7 @@ struct NeuroSMSResponseJson
  */
 #define CNAME_HASH(x) CName(x).hash
 
-mod::NeuroChoiceContext mod::NeuroChoiceContext::FromGameData(game::interactions::vis::ListChoiceData& aChoiceData,
+mod::NeuroChoiceContext mod::NeuroChoiceContext::FromGameData(const game::interactions::vis::ListChoiceData& aChoiceData,
                                                               CString& aHubTitle, int aId, bool aIsTimed,
                                                               float aChoiceTimer)
 {
@@ -668,6 +671,34 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 {
                     response->m_actionResponse = "Failed to obtain messenger dialog handle.";
                 }
+                break;
+            }
+            case CNAME_HASH("query_quickhackable_targets"):
+            {
+                DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+
+                if (!CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                    break;
+                }
+
+                std::vector<Impl::JSON::NeuroQuickhackDataJson> jsonArray{};
+
+                for (auto& i : quickhackDataArray)
+                {
+                    jsonArray.push_back(Impl::JSON::NeuroQuickhackDataJson::FromGame(i));
+                }
+
+                std::string json{};
+
+                if (glz::write_json(jsonArray, json))
+                {
+                    response->m_actionResponse = "Failed to serialize quickhack data to JSON.";
+                    break;
+                }
+
+                response->m_actionResponse = json.c_str();
                 break;
             }
             default:

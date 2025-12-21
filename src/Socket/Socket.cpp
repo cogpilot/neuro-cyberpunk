@@ -67,6 +67,16 @@ constexpr char JsonSchema[] = "{}";
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace QueryMoney
 
+namespace QueryQuickhackableTargets
+{
+constexpr char Name[] = "query_quickhackable_targets";
+constexpr char Desc[] =
+    R"(Query information about the targets the player can quickhack. Returns an array of targets with their IDs and the quickhacks the player can perform on them.)";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace QueryQuickhackableTargets
+
 #pragma region Actions
 namespace DriveToDestination
 {
@@ -131,10 +141,18 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 #pragma endregion
 
-neurosdk_action ActionsList[] = {QueryQuestContext::Action,    QueryQuests::Action,        QueryWaypoints::Action,
-                                 QueryInventory::Action,       QueryPlayerInfo::Action,    QueryMoney::Action,
-                                 DriveToDestination::Action,   SelectChoiceOption::Action, SelectSMSResponse::Action,
-                                 RunQuickhackOnTarget::Action, SummonCar::Action};
+neurosdk_action ActionsList[] = {QueryQuestContext::Action,
+                                 QueryQuests::Action,
+                                 QueryWaypoints::Action,
+                                 QueryInventory::Action,
+                                 QueryPlayerInfo::Action,
+                                 QueryMoney::Action,
+                                 QueryQuickhackableTargets::Action,
+                                 DriveToDestination::Action,
+                                 SelectChoiceOption::Action,
+                                 SelectSMSResponse::Action,
+                                 RunQuickhackOnTarget::Action,
+                                 SummonCar::Action};
 
 constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 
@@ -170,7 +188,8 @@ bool neuro::NeuroSocket::SendContext(StringView aContext, bool aSilent)
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
 }
 
-bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQuery, StringView aState, StringView aPriority)
+bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQuery, StringView aState,
+                                          StringView aPriority)
 {
     const char* tempActionNames[] = {aActionName.Data()};
 
@@ -231,9 +250,10 @@ bool neuro::NeuroSocket::Initialize()
         return false;
     }
 
-    return SendContext(
-        "You are playing Cyberpunk 2077, an action RPG. Commands will only give reasonable output once you are ingame.",
-        true) && IsAlive();
+    return SendContext("You are playing Cyberpunk 2077, an action RPG. Commands will only give reasonable output once "
+                       "you are ingame.",
+                       true) &&
+           IsAlive();
 }
 
 bool neuro::NeuroSocket::IsAlive()
