@@ -93,7 +93,7 @@ namespace JSON
 struct DriveToWaypointJson
 {
     std::string destType{};
-    std::string target{};
+    std::variant<std::uint64_t, std::string> target{};
 };
 
 struct NeuroChoiceLineJson
@@ -562,8 +562,24 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 {
                     NewMappinID mappinId{};
 
-                    if (std::from_chars(json.target.c_str(), json.target.c_str() + json.target.size(), mappinId.value)
-                            .ec != std::errc())
+                    // Evil hack: target can be string or uint64_t because Neuro can be silly
+                    if (std::holds_alternative<std::string>(json.target))
+                    {
+                        auto targetStr = std::get<std::string>(json.target);
+
+                        if (std::from_chars(targetStr.c_str(), targetStr.c_str() + targetStr.size(),
+                                            mappinId.value)
+                                .ec != std::errc())
+                        {
+                            response->m_actionResponse = "Failed to parse mappin ID.";
+                            break;
+                        }
+                    }
+                    else if (std::holds_alternative<std::uint64_t>(json.target))
+                    {
+                        mappinId.value = std::get<std::uint64_t>(json.target);
+                    }
+                    else
                     {
                         response->m_actionResponse = "Failed to parse mappin ID.";
                         break;
@@ -576,7 +592,18 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 }
                 else if (json.destType == "district")
                 {
-                    CString districtName{json.target.c_str()};
+                    std::string targetName{};
+
+                    if (std::holds_alternative<std::string>(json.target)) {
+                        targetName = std::get<std::string>(json.target);
+                    }
+                    else
+                    {
+                        response->m_actionResponse = "Invalid target for district type.";
+                        break;
+                    }
+
+                    CString districtName{targetName.c_str()};
 
                     if (!CallVirtual(this, "OnAutodriveToDistrict", response->m_actionResponse, districtName))
                     {
