@@ -299,6 +299,13 @@ mod::NeuroChoiceContext mod::NeuroChoiceContext::FromGameData(game::interactions
                     }
                     auto& lifepathRecord = Red::GetProperty<Handle<TweakDBRecord>>(part, "record");
 
+                    if (!lifepathRecord)
+                    {
+                        // HOTFIX: sometimes lifepath record is null, just skip in that case
+                        // Crashed on stream twice lol
+                        break;
+                    }
+
                     gamedataLocKeyWrapper displayName{};
 
                     if (!TweakDB::Get()->TryGetValue<gamedataLocKeyWrapper>({lifepathRecord->recordID, ".displayName"},
