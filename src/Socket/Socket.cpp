@@ -119,6 +119,17 @@ constexpr char JsonSchema[] =
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace RunQuickhackOnTarget
 
+namespace TrackQuest
+{
+constexpr char Name[] = "track_quest";
+constexpr char Desc[] =
+    R"(Track a quest from the active quest list. The quest name needs to be exact so you should call query_all_quests before this.)";
+constexpr char JsonSchema[] =
+    R"({ "additionalProperties": false, "type": "object", "properties": { "name": { "description": "The name of the quest to be tracked. This needs to be exact.", "type": "string" } }, "required": ["name"] })";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace TrackQuest
+
 namespace SummonCar
 {
 constexpr char Name[] = "summon_car";
@@ -134,7 +145,7 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 neurosdk_action ActionsList[] = {QueryQuestContext::Action,    QueryQuests::Action,        QueryWaypoints::Action,
                                  QueryInventory::Action,       QueryPlayerInfo::Action,    QueryMoney::Action,
                                  DriveToDestination::Action,   SelectChoiceOption::Action, SelectSMSResponse::Action,
-                                 RunQuickhackOnTarget::Action, SummonCar::Action};
+                                 RunQuickhackOnTarget::Action, TrackQuest::Action, SummonCar::Action};
 
 constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 
@@ -170,7 +181,8 @@ bool neuro::NeuroSocket::SendContext(StringView aContext, bool aSilent)
     return neurosdk_context_send(&m_context, &msg) == NeuroSDK_None;
 }
 
-bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQuery, StringView aState, StringView aPriority)
+bool neuro::NeuroSocket::SendForcedAction(StringView aActionName, StringView aQuery, StringView aState,
+                                          StringView aPriority)
 {
     const char* tempActionNames[] = {aActionName.Data()};
 
@@ -231,9 +243,10 @@ bool neuro::NeuroSocket::Initialize()
         return false;
     }
 
-    return SendContext(
-        "You are playing Cyberpunk 2077, an action RPG. Commands will only give reasonable output once you are ingame.",
-        true) && IsAlive();
+    return SendContext("You are playing Cyberpunk 2077, an action RPG. Commands will only give reasonable output once "
+                       "you are ingame.",
+                       true) &&
+           IsAlive();
 }
 
 bool neuro::NeuroSocket::IsAlive()

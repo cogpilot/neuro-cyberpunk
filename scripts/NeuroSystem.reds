@@ -564,6 +564,11 @@ public native class NeuroSystem extends IGameSystem {
         return StringUtils.BuildString(stringBuilder, "\r\n");
     }
 
+    public cb func OnTrackQuest(name: String) -> String {
+        let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+        return journalManager.TrackQuestByName(name);
+    }
+
     public func TranslateItemIdToNeuroDesc(owner: ref<PlayerPuppet>, id: ItemID) -> String {
         let transactionSystem = GameInstance.GetTransactionSystem(GetGameInstance());
 
@@ -604,4 +609,3 @@ public native class NeuroSystem extends IGameSystem {
 
 @addMethod(GameInstance)
 public native static func GetNeuroSystem() -> ref<NeuroSystem>;
-

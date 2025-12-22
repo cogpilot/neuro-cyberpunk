@@ -1,6 +1,38 @@
 module Neuro
 
 @addMethod(JournalManager)
+public final func TrackQuestByName(questName: String) -> String {
+    // Track quest by localized name
+    let ctx: JournalRequestContext;
+
+    ctx.stateFilter.active = true;
+    ctx.stateFilter.failed = false;
+    ctx.stateFilter.succeeded = false;
+    ctx.stateFilter.inactive = false;
+
+    let questList: [wref<JournalEntry>];
+    this.GetQuests(ctx, questList);
+
+    for questAsEntry in questList {
+        if IsDefined(questAsEntry) {
+            let quest = questAsEntry as JournalQuest;
+
+            if IsDefined(quest) {
+                let title = quest.GetTitle(this);
+                let localizedTitle = GetLocalizedText(title);
+
+                if Equals(localizedTitle, questName) {
+                    this.TrackEntry(quest);
+                    return s"Now tracking quest \(questName)";
+                }
+            }
+        }
+    }
+
+    return s"Failed to find quest \(questName)";
+}
+
+@addMethod(JournalManager)
 public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String {
     // TODO: use string builder for building data?
     let asQuest: ref<JournalQuest> = questEntry as JournalQuest;

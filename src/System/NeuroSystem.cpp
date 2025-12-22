@@ -235,6 +235,11 @@ struct NeuroSMSResponseJson
 {
     int id{};
 };
+
+struct NeuroTrackQuestJson
+{
+    std::string name{};
+};
 } // namespace JSON
 } // namespace Impl
 
@@ -674,6 +679,27 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 else
                 {
                     response->m_actionResponse = "Failed to obtain messenger dialog handle.";
+                }
+                break;
+            }
+            case CNAME_HASH("track_quest"):
+            {
+                Impl::JSON::NeuroTrackQuestJson json{};
+                // operator bool overload for glz::error_ctx returns true on failure!
+                if (glz::read_json(json, response->m_actionData.c_str()))
+                {
+                    response->m_actionResponse = "Failed to parse action data JSON.";
+                    break;
+                }
+                if (json.name.empty())
+                {
+                    response->m_actionResponse = "No quest name provided.";
+                    break;
+                }
+                CString questName{json.name.c_str()};
+                if (!CallVirtual(this, "OnTrackQuest", response->m_actionResponse, questName))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
                 }
                 break;
             }
