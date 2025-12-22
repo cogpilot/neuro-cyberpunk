@@ -971,7 +971,7 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 
             if (isTimed)
             {
-                msg->m_priority = "critical";
+                msg->m_priority = "high";
             }
 
             AddMessage(msg);
@@ -1182,7 +1182,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
             timer = VisualizerGetDuration(timeProvider) - VisualizerGetProgress(timeProvider);
 
             // Halved just in case
-            auto delayTime = timer * 0.5f;
+            auto delayTime = timer * 0.3f;
 
             if (delayTimerForForcedAction > delayTime)
             {
