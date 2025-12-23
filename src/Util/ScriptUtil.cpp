@@ -2,6 +2,8 @@
 #include <RedLib.hpp>
 #include <Context/Context.hpp>
 
+#include <Shared/Raw/String/String.hpp>
+
 using namespace Red;
 
 namespace util
@@ -59,9 +61,20 @@ public:
         return CString(retBuffer.entries);
     }
 
+    static CString FormatString(const CString& aTemplate, Red::Handle<text::TextParameterSet>& aParams)
+    {
+        shared::raw::String::UTF16String utf16Template{aTemplate};
+        auto utf16Result = utf16Template.FormatWithTextParameterSet(aParams);
+        auto result = utf16Result.ToUTF8();
+        return result;
+    }
+
     RTTI_IMPL_TYPEINFO(StringUtils);
     RTTI_IMPL_ALLOCATOR();
 };
 } // namespace util
 
-RTTI_DEFINE_CLASS(util::StringUtils, { RTTI_METHOD(BuildString); });
+RTTI_DEFINE_CLASS(util::StringUtils, {
+    RTTI_METHOD(BuildString);
+    RTTI_METHOD(FormatString);
+});
