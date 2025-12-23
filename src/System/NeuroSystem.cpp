@@ -93,7 +93,7 @@ namespace JSON
 struct DriveToWaypointJson
 {
     std::string destType{};
-    std::string target{};
+    std::variant<std::uint64_t, std::string> target{};
 };
 
 struct NeuroChoiceLineJson
@@ -238,6 +238,11 @@ struct NeuroSMSResponseJson
 {
     int id{};
 };
+
+struct NeuroTrackQuestJson
+{
+    std::string name{};
+};
 } // namespace JSON
 } // namespace Impl
 
@@ -301,6 +306,13 @@ mod::NeuroChoiceContext mod::NeuroChoiceContext::FromGameData(const game::intera
                         break;
                     }
                     auto& lifepathRecord = Red::GetProperty<Handle<TweakDBRecord>>(part, "record");
+
+                    if (!lifepathRecord)
+                    {
+                        // HOTFIX: sometimes lifepath record is null, just skip in that case
+                        // Crashed on stream twice lol
+                        break;
+                    }
 
                     gamedataLocKeyWrapper displayName{};
 
@@ -553,8 +565,24 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 {
                     NewMappinID mappinId{};
 
-                    if (std::from_chars(json.target.c_str(), json.target.c_str() + json.target.size(), mappinId.value)
-                            .ec != std::errc())
+                    // Evil hack: target can be string or uint64_t because Neuro can be silly
+                    if (std::holds_alternative<std::string>(json.target))
+                    {
+                        auto targetStr = std::get<std::string>(json.target);
+
+                        if (std::from_chars(targetStr.c_str(), targetStr.c_str() + targetStr.size(),
+                                            mappinId.value)
+                                .ec != std::errc())
+                        {
+                            response->m_actionResponse = "Failed to parse mappin ID.";
+                            break;
+                        }
+                    }
+                    else if (std::holds_alternative<std::uint64_t>(json.target))
+                    {
+                        mappinId.value = std::get<std::uint64_t>(json.target);
+                    }
+                    else
                     {
                         response->m_actionResponse = "Failed to parse mappin ID.";
                         break;
@@ -567,7 +595,18 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 }
                 else if (json.destType == "district")
                 {
-                    CString districtName{json.target.c_str()};
+                    std::string targetName{};
+
+                    if (std::holds_alternative<std::string>(json.target)) {
+                        targetName = std::get<std::string>(json.target);
+                    }
+                    else
+                    {
+                        response->m_actionResponse = "Invalid target for district type.";
+                        break;
+                    }
+
+                    CString districtName{targetName.c_str()};
 
                     if (!CallVirtual(this, "OnAutodriveToDistrict", response->m_actionResponse, districtName))
                     {
@@ -670,6 +709,27 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 else
                 {
                     response->m_actionResponse = "Failed to obtain messenger dialog handle.";
+                }
+                break;
+            }
+            case CNAME_HASH("track_quest"):
+            {
+                Impl::JSON::NeuroTrackQuestJson json{};
+                // operator bool overload for glz::error_ctx returns true on failure!
+                if (glz::read_json(json, response->m_actionData.c_str()))
+                {
+                    response->m_actionResponse = "Failed to parse action data JSON.";
+                    break;
+                }
+                if (json.name.empty())
+                {
+                    response->m_actionResponse = "No quest name provided.";
+                    break;
+                }
+                CString questName{json.name.c_str()};
+                if (!CallVirtual(this, "OnTrackQuest", response->m_actionResponse, questName))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
                 }
                 break;
             }
@@ -995,7 +1055,7 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 
             if (isTimed)
             {
-                msg->m_priority = "critical";
+                msg->m_priority = "high";
             }
 
             AddMessage(msg);
@@ -1216,7 +1276,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
             timer = VisualizerGetDuration(timeProvider) - VisualizerGetProgress(timeProvider);
 
             // Halved just in case
-            auto delayTime = timer * 0.5f;
+            auto delayTime = timer * 0.3f;
 
             if (delayTimerForForcedAction > delayTime)
             {

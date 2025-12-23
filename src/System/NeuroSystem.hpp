@@ -169,7 +169,7 @@ public:
 
     static constexpr auto MaxKeepTrackOfForcedActions = 5.f;
 
-    static constexpr auto ChoicehubDelayBeforeForcedAction = 2.f;
+    static constexpr auto ChoicehubDelayBeforeForcedAction = 1.5f;
 
     // Lock to access Neuro socket
     Red::SharedSpinLock m_socketLock{};

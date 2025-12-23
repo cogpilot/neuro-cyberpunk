@@ -129,6 +129,17 @@ constexpr char JsonSchema[] =
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace RunQuickhackOnTarget
 
+namespace TrackQuest
+{
+constexpr char Name[] = "track_quest";
+constexpr char Desc[] =
+    R"(Track a quest from the active quest list. The quest name needs to be exact so you should call query_all_quests before this.)";
+constexpr char JsonSchema[] =
+    R"({ "additionalProperties": false, "type": "object", "properties": { "name": { "description": "The name of the quest to be tracked. This needs to be exact.", "type": "string" } }, "required": ["name"] })";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace TrackQuest
+
 namespace SummonCar
 {
 constexpr char Name[] = "summon_car";

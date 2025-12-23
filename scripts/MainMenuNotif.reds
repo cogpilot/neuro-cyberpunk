@@ -13,8 +13,19 @@ private final func FinishMenuInitialization() -> Void {
     let neuroNotificationText = new inkText();
     let controller = new inkTextReplaceController();
 
-    neuroNotificationText.logicController = controller;
+    neuroNotificationText.AttachController(controller, false);
     this.m_neuroNotificationTextController = controller;
+
+    let blackwallEffect = new inkBlackwallEffect();
+
+    blackwallEffect.effectName = n"Blackwall_0";
+    blackwallEffect.isEnabled = true;
+    blackwallEffect.intensity = 0.12;
+    blackwallEffect.sizeX = 1000;
+    blackwallEffect.sizeY = 200;
+    blackwallEffect.scaleY = 0.5;
+
+    neuroNotificationText.AddEffect(blackwallEffect);
 
     let neuroPrimaryColor = HDRColor(0.368627, 0.964706, 1.0, 1.0);
 
