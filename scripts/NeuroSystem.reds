@@ -305,7 +305,7 @@ public native class NeuroSystem extends IGameSystem {
         return "You have chosen a dialogue choice, which your player in-game will now perform. Limit your reaction to one sentence.";
     }
 
-    public cb func OnAutodriveToMappin(mappinId: NewMappinID) -> String {
+    private final func OnAutodriveInternal(mappinId: NewMappinID, isTracked: Bool) -> String {
         let player = GameInstance.GetPlayerSystem(GetGameInstance()).GetLocalPlayerControlledGameObject() as PlayerPuppet;
 
         if !IsDefined(player) {
@@ -334,18 +334,22 @@ public native class NeuroSystem extends IGameSystem {
 
         let aiCommand = new DriveToPointAutonomousUpdate();
 
-        aiCommand.minSpeed = 5;
+        aiCommand.minSpeed = 15;
         aiCommand.maxSpeed = 170;
         aiCommand.targetPosition = mappin.GetWorldPosition();
         aiCommand.minimumDistanceToTarget = 40;
         aiCommand.driveDownTheRoadIndefinitely = false;
 
-        vehicle.SetupNeurodrivePointToPoint(aiCommand);
+        vehicle.SetupNeurodrivePointToPoint(aiCommand, isTracked);
 
         let announcerEvent = new NeurodriveAnnouncerEvent();
         vehicle.QueueEvent(announcerEvent);
 
         return "Autodrive started.";
+    }
+
+    public cb func OnAutodriveToMappin(mappinId: NewMappinID) -> String {
+        return this.OnAutodriveInternal(mappinId, false);
     }
 
     public cb func OnAutodriveToTracked() -> String {
@@ -361,12 +365,13 @@ public native class NeuroSystem extends IGameSystem {
                 let mappin = mappinSystem.GetMappinFromObjective(phase, trackedEntry);
 
                 if IsDefined(mappin) {
-                    return this.OnAutodriveToMappin(mappin.GetNewMappinID());
+                    return this.OnAutodriveInternal(mappin.GetNewMappinID(), true);
                 }
             }
         }
 
-        return this.OnAutodriveToMappin(mappinSystem.GetManuallyTrackedMappinID());
+        // Note: don't autoupdate tracker for this one prob
+        return this.OnAutodriveInternal(mappinSystem.GetManuallyTrackedMappinID(), false);
     }
 
     public cb func OnAutodriveToDistrict(districtLocalizedName: String) -> String {
