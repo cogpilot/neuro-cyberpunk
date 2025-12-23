@@ -619,3 +619,4 @@ public native class NeuroSystem extends IGameSystem {
 
 @addMethod(GameInstance)
 public native static func GetNeuroSystem() -> ref<NeuroSystem>;
+

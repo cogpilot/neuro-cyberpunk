@@ -241,10 +241,13 @@ public:
    
 #pragma region Fuzzer
     Red::SharedSpinLock m_fuzzerLock{};
-
+    
     bool m_fuzzerActive{};
     int m_currentFuzzerFunction{};
     std::uint64_t m_fuzzerCalls{};
+
+    Red::SharedSpinLock m_fuzzerQuickhackLock{};
+    bool m_fuzzerQuickhackCanBeCalled{};
 #pragma endregion
 
 #pragma region Callbacks
