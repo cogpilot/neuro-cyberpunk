@@ -246,3 +246,17 @@ protected cb func OnKillRewardEvent(evt: ref<KillRewardEvent>) -> Bool {
         }
     }
 }
+
+@wrapMethod(PreventionSystem)
+private final func OnHeatChanged(previousHeat: EPreventionHeatStage) -> Void {
+    wrappedMethod(previousHeat);
+
+    let currentHeat = this.m_heatStage;
+    let asInt = EnumInt(currentHeat);
+    let prevAsInt = EnumInt(previousHeat);
+    if asInt == 0 && asInt != prevAsInt {
+        GameInstance.GetNeuroSystem().SendContext("You are no longer wanted by the police.");
+    } else {
+        GameInstance.GetNeuroSystem().SendContext(s"You are wanted by the police with \(asInt) star(s).");
+    }
+}

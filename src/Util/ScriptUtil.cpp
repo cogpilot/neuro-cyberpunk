@@ -65,8 +65,37 @@ public:
     {
         shared::raw::String::UTF16String utf16Template{aTemplate};
         auto utf16Result = utf16Template.FormatWithTextParameterSet(aParams);
-        auto result = utf16Result.ToUTF8();
-        return result;
+        auto formatted = utf16Result.ToUTF8();
+
+        // Note: since this is only used for quickhacks, we can filter out HTML tags to help Neuro with context :P
+
+        DynArray<char> final{};
+
+        auto insideTag = false;
+        for (auto ch : formatted)
+        {
+            if (ch == '<')
+            {
+                insideTag = true;
+                continue;
+            }
+            else if (ch == '>')
+            {
+                insideTag = false;
+                continue;
+            }
+
+            if (!insideTag)
+            {
+                final.PushBack(ch);
+            }
+        }
+
+        final.PushBack('\0');
+
+        CString ret{final.entries};
+        
+        return ret;
     }
 
     RTTI_IMPL_TYPEINFO(StringUtils);
