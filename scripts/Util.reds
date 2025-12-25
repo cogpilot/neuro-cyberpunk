@@ -1,5 +1,8 @@
+
 public native class StringUtils {
-    public static native func BuildString(parts: [String], delim: String) -> String;
+    public native static func BuildString(parts: [String], delim: String) -> String;
+
+    public native static func FormatString(template: String, paramSet: ref<inkTextParams>) -> String;
 }
 
 @addMethod(ScriptedPuppet)

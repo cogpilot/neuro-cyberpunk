@@ -67,6 +67,16 @@ constexpr char JsonSchema[] = "{}";
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace QueryMoney
 
+namespace QueryQuickhackableTargets
+{
+constexpr char Name[] = "query_quickhackable_targets";
+constexpr char Desc[] =
+    R"(Query information about the targets the player can quickhack. Returns an array of targets with their IDs and the quickhacks the player can perform on them.)";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace QueryQuickhackableTargets
+
 #pragma region Actions
 namespace DriveToDestination
 {
@@ -111,10 +121,9 @@ namespace RunQuickhackOnTarget
 {
 constexpr char Name[] = "run_quickhack_on_target";
 constexpr char Desc[] =
-    R"(Choose a quickhack to hack a target with. Targets can be enemies or inanimate objects.
-A list of quickhacks is provided in context, as well as information on the quickhack target. Quickhacks can only be performed once a forced action is provided.)";
+    R"(Run a quickhack on a target. Quickhacks and targets can be queried with query_quickhackable_targets. Note that the entity ID must be exact.)";
 constexpr char JsonSchema[] =
-    R"({ "additionalProperties": false, "type": "object", "title": "SelectQuickhack", "properties": { "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } }, "required": ["id"] })";
+    R"({ "additionalProperties": false, "type": "object", "title": "SelectQuickhack", "properties": { "entityId": { "description": "The entity ID of the quickhack target. This MUST be exact.", "type": "integer" }, "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } }, "required": ["entityId", "id"] })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace RunQuickhackOnTarget
@@ -142,10 +151,19 @@ constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_sch
 
 #pragma endregion
 
-neurosdk_action ActionsList[] = {QueryQuestContext::Action,    QueryQuests::Action,        QueryWaypoints::Action,
-                                 QueryInventory::Action,       QueryPlayerInfo::Action,    QueryMoney::Action,
-                                 DriveToDestination::Action,   SelectChoiceOption::Action, SelectSMSResponse::Action,
-                                 RunQuickhackOnTarget::Action, TrackQuest::Action, SummonCar::Action};
+neurosdk_action ActionsList[] = {QueryQuestContext::Action,
+                                 QueryQuests::Action,
+                                 QueryWaypoints::Action,
+                                 QueryInventory::Action,
+                                 QueryPlayerInfo::Action,
+                                 QueryMoney::Action,
+                                 QueryQuickhackableTargets::Action,
+                                 DriveToDestination::Action,
+                                 SelectChoiceOption::Action,
+                                 SelectSMSResponse::Action,
+                                 RunQuickhackOnTarget::Action,
+                                 TrackQuest::Action,
+                                 SummonCar::Action};
 
 constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 

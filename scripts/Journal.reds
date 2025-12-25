@@ -286,11 +286,14 @@ public final func SetData(
         finalTitle += " [" + GetLocalizedText("UI-ScriptExports-Optional0") + "]";
     }
 
-    itemID = this.m_objectiveEntry.GetItemID();
-    if TDBID.IsValid(itemID) {
-        itemRecord = TweakDBInterface.GetItemRecord(itemID);
-        finalTitle
-            += GetLocalizedText("Common-Characters-Semicolon") + " " + GetLocalizedText(NameToString(itemRecord.DisplayName()));
+    if IsDefined(this.m_objectiveEntry) {
+        // Fix: tracked mappin container fits under this func too!
+        itemID = this.m_objectiveEntry.GetItemID();
+        if TDBID.IsValid(itemID) {
+            itemRecord = TweakDBInterface.GetItemRecord(itemID);
+            finalTitle
+                += GetLocalizedText("Common-Characters-Semicolon") + " " + GetLocalizedText(NameToString(itemRecord.DisplayName()));
+        }
     }
 
     this.m_finalTitle = finalTitle;
@@ -374,6 +377,18 @@ public final func UpdateNeuroQuestTrackerView() -> Void {
         }
     }
 
+    if IsDefined(this.m_currentMappin) {
+        let mappinText = NameToString(MappinUIUtils.MappinToString(this.m_currentMappin.GetVariant()));
+        let objectiveText = NameToString(MappinUIUtils.MappinToObjectiveString(this.m_currentMappin.GetVariant()));
+
+        let locMappinText = GetLocalizedText(mappinText);
+        let locObjText = GetLocalizedText(objectiveText);
+
+        ArrayPush(stringBuilder, "Tracked minor activity:");
+        ArrayPush(stringBuilder, locMappinText);
+        ArrayPush(stringBuilder, locObjText);
+    }
+
     let str = StringUtils.BuildString(stringBuilder, "\r\n");
     // Prevent spamming Neuro with tons of messages...
     let hash = FNV1a64(str);
@@ -387,6 +402,12 @@ public final func UpdateNeuroQuestTrackerView() -> Void {
 @wrapMethod(QuestTrackerGameController)
 protected cb func OnInitialize() -> Bool {
     wrappedMethod();
+    this.UpdateNeuroQuestTrackerView();
+}
+
+@wrapMethod(QuestTrackerGameController)
+protected cb func OnTrackedMappinUpdated(value: Variant) -> Bool {
+    wrappedMethod(value);
     this.UpdateNeuroQuestTrackerView();
 }
 

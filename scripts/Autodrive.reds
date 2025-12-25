@@ -3,6 +3,9 @@ module Neuro
 @addField(VehicleObject)
 public let m_neurodriveAiCommand: ref<AIVehicleCommand>;
 
+@addField(VehicleObject)
+public let m_isNeurodriveUsingTrackedMappin: Bool;
+
 @addMethod(VehicleObject)
 public func KillNeurodrive(silent: Bool) -> Bool {
     if IsDefined(this.m_neurodriveAiCommand) {
@@ -29,11 +32,15 @@ public func KillNeurodrive(silent: Bool) -> Bool {
         return true;
     }
 
+    // Just in case
+    GameInstance
+        .GetJournalManager(GetGameInstance())
+        .UnregisterScriptCallback(this, n"OnJournalTrackedUpdate");
     return false;
 }
 
 @addMethod(VehicleObject)
-public func SetupNeurodrivePointToPoint(data: ref<DriveToPointAutonomousUpdate>) {
+public func SetupNeurodrivePointToPoint(data: ref<DriveToPointAutonomousUpdate>, isDrivingToTrackedWaypoint: Bool) {
     let cmd = data.CreateCmd();
 
     let aiCommandEvent = new AICommandEvent();
@@ -43,6 +50,57 @@ public func SetupNeurodrivePointToPoint(data: ref<DriveToPointAutonomousUpdate>)
     this.GetAIComponent().SetDriveToPointAutonomousUpdate(data);
 
     this.m_neurodriveAiCommand = cmd;
+    this.m_isNeurodriveUsingTrackedMappin = isDrivingToTrackedWaypoint;
+
+    if this.m_isNeurodriveUsingTrackedMappin {
+        let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+        journalManager
+            .RegisterScriptCallback(this, n"OnJournalTrackedUpdate", gameJournalListenerType.Tracked);
+    }
+}
+
+@addMethod(VehicleObject)
+public cb func OnJournalTrackedUpdate(
+    hash: Uint32,
+    className: CName,
+    notifyOption: JournalNotifyOption,
+    changeType: JournalChangeType
+) {
+    if !IsDefined(this.m_neurodriveAiCommand) {
+        return;
+    }
+
+    let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+
+    let trackedEntry = journalManager.GetTrackedEntry() as JournalQuestObjectiveBase;
+
+    if !IsDefined(trackedEntry) {
+        return;
+    }
+
+    let mappinSystem = GameInstance.GetMappinSystem(GetGameInstance());
+
+    let positions: [Vector3];
+
+    if !mappinSystem
+        .GetQuestMappinPositionsByObjective(Cast<Uint32>(journalManager.GetEntryHash(trackedEntry)), positions) {
+        return;
+    }
+
+    if ArraySize(positions) == 0 {
+        return;
+    }
+
+    let targetPosition = Vector4.Vector3To4(positions[0]);
+    let aiCommand = new DriveToPointAutonomousUpdate();
+
+    aiCommand.minSpeed = 15;
+    aiCommand.maxSpeed = 170;
+    aiCommand.targetPosition = targetPosition;
+    aiCommand.minimumDistanceToTarget = 40;
+    aiCommand.driveDownTheRoadIndefinitely = false;
+
+    this.GetAIComponent().SetDriveToPointAutonomousUpdate(aiCommand);
 }
 
 @addMethod(VehicleObject)
@@ -69,7 +127,9 @@ protected cb func OnUnmountingEvent(evt: ref<UnmountingEvent>) -> Bool {
 
     if IsDefined(mountChild) && mountChild.IsPlayer() {
         if this.KillNeurodrive(true) {
-            GameInstance.GetNeuroSystem().SendContext("Autodrive stopped due to exiting the vehicle.");
+            GameInstance
+                .GetNeuroSystem()
+                .SendContext("Autodrive stopped due to exiting the vehicle.");
         }
     }
 }
@@ -86,7 +146,9 @@ public class NeurodriveInputListener {
 
                 if IsDefined(vehicle) {
                     if vehicle.KillNeurodrive(false) {
-                        GameInstance.GetNeuroSystem().SendContext("Autodrive stopped due to player input.");
+                        GameInstance
+                            .GetNeuroSystem()
+                            .SendContext("Autodrive stopped due to player input.");
                     }
                 }
             }
