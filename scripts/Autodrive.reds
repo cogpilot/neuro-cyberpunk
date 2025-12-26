@@ -13,20 +13,8 @@ public func KillNeurodrive(silent: Bool) -> Bool {
         this.GetAIComponent().StopExecutingCommand(this.m_neurodriveAiCommand, true);
         this.m_neurodriveAiCommand = null;
 
-        let warningMsg: SimpleScreenMessage;
-        warningMsg.isShown = true;
-        warningMsg.duration = 2;
-        warningMsg.message = GetLocalizedTextByKey(n"Neuro-OnAutodriveKilled");
-        warningMsg.type = SimpleMessageType.Relic;
         if !silent {
-            GameInstance
-                .GetBlackboardSystem(GetGameInstance())
-                .Get(GetAllBlackboardDefs().UI_Notifications)
-                .SetVariant(
-                    GetAllBlackboardDefs().UI_Notifications.WarningMessage,
-                    ToVariant(warningMsg),
-                    true
-                );
+            SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveKilled");
         }
 
         return true;
@@ -40,7 +28,54 @@ public func KillNeurodrive(silent: Bool) -> Bool {
 }
 
 @addMethod(VehicleObject)
-public func SetupNeurodrivePointToPoint(data: ref<DriveToPointAutonomousUpdate>, isDrivingToTrackedWaypoint: Bool) {
+public cb func OnAICommandStateEvent(ev: ref<AICommandStateEvent>) {
+    if !IsDefined(this.m_neurodriveAiCommand) {
+        return;
+    }
+
+    if ev.command != this.m_neurodriveAiCommand {
+        return;
+    }
+
+    let neuroSystem = GameInstance.GetNeuroSystem();
+
+    switch ev.newState {
+        case AICommandState.Success:
+            this.KillNeurodrive(true);
+            this.ForceBrakesUntilStoppedOrFor(5);
+            SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveArrived");
+            neuroSystem.SendContext("Autodrive arrived to destination.");
+            break;
+        case AICommandState.Failure:
+            this.KillNeurodrive(true);
+            SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveFail");
+            neuroSystem.SendContext("Autodrive failed for unknown reasons.");
+            break;
+        default:
+            break;
+    }
+}
+
+@addMethod(DriveToPointAutonomousUpdate)
+public static func MakeNeuroAutodriveData(targetPosition: Vector4) -> ref<DriveToPointAutonomousUpdate> {
+    let self = new DriveToPointAutonomousUpdate();
+
+    self.clearTrafficOnPath = false;
+    self.driveDownTheRoadIndefinitely = false;
+    self.minSpeed = 15;
+    self.maxSpeed = 170;
+    self.minimumDistanceToTarget = 40;
+    self.targetPosition = targetPosition;
+
+    return self;
+}
+
+@addMethod(VehicleObject)
+public func SetupNeurodrivePointToPoint(
+    data: ref<DriveToPointAutonomousUpdate>,
+    isDrivingToTrackedWaypoint: Bool,
+    isUpdate: Bool
+) {
     let cmd = data.CreateCmd();
 
     let aiCommandEvent = new AICommandEvent();
@@ -50,6 +85,11 @@ public func SetupNeurodrivePointToPoint(data: ref<DriveToPointAutonomousUpdate>,
     this.GetAIComponent().SetDriveToPointAutonomousUpdate(data);
 
     this.m_neurodriveAiCommand = cmd;
+
+    if isUpdate {
+        return;
+    }
+
     this.m_isNeurodriveUsingTrackedMappin = isDrivingToTrackedWaypoint;
 
     if this.m_isNeurodriveUsingTrackedMappin {
@@ -92,33 +132,18 @@ public cb func OnJournalTrackedUpdate(
     }
 
     let targetPosition = Vector4.Vector3To4(positions[0]);
-    let aiCommand = new DriveToPointAutonomousUpdate();
 
-    aiCommand.minSpeed = 15;
-    aiCommand.maxSpeed = 170;
-    aiCommand.targetPosition = targetPosition;
-    aiCommand.minimumDistanceToTarget = 40;
-    aiCommand.driveDownTheRoadIndefinitely = false;
+    ModLog(n"Neuro", s"Retracking to mappin \(targetPosition)!");
 
-    this.GetAIComponent().SetDriveToPointAutonomousUpdate(aiCommand);
+    let aiCommand = DriveToPointAutonomousUpdate.MakeNeuroAutodriveData(targetPosition);
+
+    this.KillNeurodrive(true);
+    this.SetupNeurodrivePointToPoint(aiCommand, false, true);
 }
 
 @addMethod(VehicleObject)
 public cb func OnNeurodriveAnnouncerEvent(evt: ref<NeurodriveAnnouncerEvent>) {
-    let warningMsg: SimpleScreenMessage;
-    warningMsg.isShown = true;
-    warningMsg.duration = 2;
-    warningMsg.message = GetLocalizedTextByKey(n"Neuro-OnAutodriveStart");
-    warningMsg.type = SimpleMessageType.Relic;
-
-    GameInstance
-        .GetBlackboardSystem(GetGameInstance())
-        .Get(GetAllBlackboardDefs().UI_Notifications)
-        .SetVariant(
-            GetAllBlackboardDefs().UI_Notifications.WarningMessage,
-            ToVariant(warningMsg),
-            true
-        );
+    SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveStart");
 }
 
 @wrapMethod(VehicleObject)

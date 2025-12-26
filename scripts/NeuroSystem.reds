@@ -86,6 +86,7 @@ public native class NeuroSystem extends IGameSystem {
     }
 
     public cb func OnQuickhackTarget(entId: EntityID, hackId: Int32) -> String {
+        // Note: could be cool if Neuro could queue multiple quickhacks, but don't see good way to do that yet
         let ent = GameInstance.FindEntityByID(GetGameInstance(), entId);
 
         if !IsDefined(ent) {
@@ -332,15 +333,8 @@ public native class NeuroSystem extends IGameSystem {
         this.TrackMappin(mappin);
         vehicle.KillNeurodrive(true);
 
-        let aiCommand = new DriveToPointAutonomousUpdate();
-
-        aiCommand.minSpeed = 15;
-        aiCommand.maxSpeed = 170;
-        aiCommand.targetPosition = mappin.GetWorldPosition();
-        aiCommand.minimumDistanceToTarget = 40;
-        aiCommand.driveDownTheRoadIndefinitely = false;
-
-        vehicle.SetupNeurodrivePointToPoint(aiCommand, isTracked);
+        let aiCommand = DriveToPointAutonomousUpdate.MakeNeuroAutodriveData(mappin.GetWorldPosition());
+        vehicle.SetupNeurodrivePointToPoint(aiCommand, isTracked, false);
 
         let announcerEvent = new NeurodriveAnnouncerEvent();
         vehicle.QueueEvent(announcerEvent);
