@@ -14,6 +14,16 @@ public class NeuroEnglishLocalization extends ModLocalizationPackage {
                 "Neuro-NotifyBadConnectionDesc",
                 "The Neuro socket failed to connect five times in a row. Connections will not be retried. Restart the game or use the CET console command Game.GetNeuroSystem().ResetBadConnectionCounter()."
             );
+        this
+            .Text(
+                "Neuro-OnAutodriveArrived",
+                "NeuroDrive\u{2122} has arrived at its destination."
+            );
+        this
+            .Text(
+                "Neuro-OnAutodriveFail",
+                "NeuroDrive\u{2122} has failed for an unexpected reason. Please contact support."
+            );
     }
 }
 

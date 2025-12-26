@@ -85,7 +85,55 @@ public native class NeuroSystem extends IGameSystem {
         this.SendContext(this.OnQueryAllQuests());
     }
 
-    public cb func OnQuickhackTarget(entId: EntityID, hackId: Int32) -> String {
+    private final func OnQuickhackTargetInternal(
+        entId: EntityID,
+        hack: ref<QuickhackData>,
+        player: ref<PlayerPuppet>,
+        first: Bool
+    ) -> String {
+        if hack.m_isLocked {
+            return "Hack is locked and can\'t be used!";
+        }
+
+        if NotEquals(hack.m_actionState, EActionInactivityReson.Ready) {
+            return "Hack is not ready for use!";
+        }
+
+        let cmd = new QuickSlotCommandUsed();
+        cmd.action = hack.m_action;
+
+        if !first {
+            hack.m_action.m_isQueuedAction = true;
+            hack.m_action.m_isActionQueueingUsed = true;
+        }
+
+        player.QueueEventForEntityID(entId, cmd);
+
+        if player.GetTakeOverControlSystem().IsDeviceControlled() {
+            let hackUsed = new QhackExecuted();
+            player
+                .QueueEventForEntityID(
+                    player
+                        .GetTakeOverControlSystem()
+                        .GetControlledObject()
+                        .GetEntityID(),
+                    hackUsed
+                );
+        }
+
+        let title = hack.m_title;
+
+        if StrLen(title) > 0 {
+            // This crashes for some reason, maybe the strlen() check will help?
+            let localized = GetLocalizedText(title);
+            return s"Dispatched quickhack \"\(localized)\" to target!";
+        }
+
+        return "Dispatched quickhack to target!";
+    }
+
+    public cb func OnQuickhackTarget(entId: EntityID, hackIds: [Int32]) -> String {
+        // Note: could be cool if Neuro could queue multiple quickhacks, but don't see good way to do that yet
         let ent = GameInstance.FindEntityByID(GetGameInstance(), entId);
 
         if !IsDefined(ent) {
@@ -111,6 +159,8 @@ public native class NeuroSystem extends IGameSystem {
         let asDevice = asObject as Device;
         let asScriptedPuppet = asObject as ScriptedPuppet;
         let asVehicle = asObject as VehicleObject;
+
+        let maxQueueSize = 1;
 
         if IsDefined(asDevice) {
             if asDevice.m_isQhackUploadInProgerss && !asDevice.IsActionQueueEnabled() || asDevice.IsActionQueueFull() {
@@ -146,6 +196,22 @@ public native class NeuroSystem extends IGameSystem {
             asScriptedPuppet.GetPS().GetAllChoices(actionRecords, ctx, puppetActions);
             asScriptedPuppet
                 .TranslateChoicesIntoQuickSlotCommands(puppetActions, quickhackActions);
+
+            maxQueueSize = FloorF(
+                GameInstance
+                    .GetStatsSystem(GetGameInstance())
+                    .GetStatValue(
+                        Cast<StatsObjectID>(player.GetEntityID()),
+                        gamedataStatType.QuickHackQueueSize
+                    )
+            );
+
+            // Already uploading hacks
+            maxQueueSize -= asScriptedPuppet.GetDeviceActionQueueSize();
+
+            if maxQueueSize == 0 {
+                return "Cannot quickhack target more!";
+            }
         } else if IsDefined(asVehicle) {
             if asVehicle.m_isQhackUploadInProgress && !asVehicle.IsActionQueueEnabled() || asVehicle.IsActionQueueFull() {
                 return "Vehicle is already too hacked!";
@@ -169,46 +235,30 @@ public native class NeuroSystem extends IGameSystem {
 
         let sz = ArraySize(quickhackActions);
 
-        if sz < hackId {
-            return "Quickhack ID no longer present in list!";
-        }
+        let responseStringBuilder: [String];
+        let cnt = 0;
 
-        let hack = quickhackActions[hackId];
+        for hackId in hackIds {
+            if cnt >= maxQueueSize {
+                break;
+            }
 
-        if hack.m_isLocked {
-            return "Hack is locked and can\'t be used!";
-        }
+            if sz < hackId {
+                let s = s"\(hackId) Quickhack ID no longer present in list!";
+                ArrayPush(responseStringBuilder, s);
+            } else {
+                let hack = quickhackActions[hackId];
 
-        if NotEquals(hack.m_actionState, EActionInactivityReson.Ready) {
-            return "Hack is not ready for use!";
-        }
-
-        let cmd = new QuickSlotCommandUsed();
-        cmd.action = hack.m_action;
-
-        player.QueueEventForEntityID(entId, cmd);
-
-        if player.GetTakeOverControlSystem().IsDeviceControlled() {
-            let hackUsed = new QhackExecuted();
-            player
-                .QueueEventForEntityID(
-                    player
-                        .GetTakeOverControlSystem()
-                        .GetControlledObject()
-                        .GetEntityID(),
-                    hackUsed
+                ArrayPush(
+                    responseStringBuilder,
+                    this.OnQuickhackTargetInternal(entId, hack, player, cnt == 0)
                 );
+
+                cnt += 1;
+            }
         }
 
-        let title = hack.m_title;
-
-        if StrLen(title) > 0 {
-            // This crashes for some reason, maybe the strlen() check will help?
-            let localized = GetLocalizedText(title);
-            return s"Dispatched quickhack \"\(localized)\" to target!";
-        }
-
-        return "Dispatched quickhack to target!";
+        return StringUtils.BuildString(responseStringBuilder, "\r\n");
     }
 
     public cb func OnSelectDialogueChoice(id: Int32, out success: Bool) -> String {
@@ -332,15 +382,8 @@ public native class NeuroSystem extends IGameSystem {
         this.TrackMappin(mappin);
         vehicle.KillNeurodrive(true);
 
-        let aiCommand = new DriveToPointAutonomousUpdate();
-
-        aiCommand.minSpeed = 15;
-        aiCommand.maxSpeed = 170;
-        aiCommand.targetPosition = mappin.GetWorldPosition();
-        aiCommand.minimumDistanceToTarget = 40;
-        aiCommand.driveDownTheRoadIndefinitely = false;
-
-        vehicle.SetupNeurodrivePointToPoint(aiCommand, isTracked);
+        let aiCommand = DriveToPointAutonomousUpdate.MakeNeuroAutodriveData(mappin.GetWorldPosition());
+        vehicle.SetupNeurodrivePointToPoint(aiCommand, isTracked, false);
 
         let announcerEvent = new NeurodriveAnnouncerEvent();
         vehicle.QueueEvent(announcerEvent);

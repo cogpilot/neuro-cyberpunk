@@ -68,7 +68,7 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
     let description = StringUtils.BuildString(descriptionStringBuilder, "\r\n");
 
     // This might be slow, as it's very recursive
-    // Good thing *most* of this will be running async!
+
     let questData = journalWrapper.BuildQuestData(asQuest);
     let districtRecord: ref<District_Record> = MappinUtils.GetDistrictRecord(questData.GetDistrict());
 

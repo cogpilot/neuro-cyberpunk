@@ -110,16 +110,34 @@ public final func TranslateQuickhackDataToNeuroDesc(data: [ref<QuickhackData>]) 
     let player = GetPlayer(GetGameInstance());
     let collectedHackData = new NeuroQuickhackDataDto();
 
+    let playerStatsObjectId = Cast<StatsObjectID>(player.GetEntityID());
+    let queueSize = 1;
+
+    let asScriptedPuppet = this as ScriptedPuppet;
+    if QuickHackableQueueHelper.IsQueuePerkBought(player) {
+        if IsDefined(asScriptedPuppet) {
+            queueSize = FloorF(
+                GameInstance
+                    .GetStatsSystem(GetGameInstance())
+                    .GetStatValue(playerStatsObjectId, gamedataStatType.QuickHackQueueSize)
+            );
+
+            // Already uploading hacks
+            queueSize -= asScriptedPuppet.GetDeviceActionQueueSize();
+        }
+
+        // We can't actually upload anything
+        if queueSize == 0 {
+            return null;
+        }
+    }
+
     collectedHackData.targetEntityId = this.GetEntityID();
     collectedHackData.targetName = GetLocalizedText(this.GetDisplayName());
     collectedHackData.ramAmount = FloorF(
         GameInstance
             .GetStatPoolsSystem(GetGameInstance())
-            .GetStatPoolValue(
-                Cast<StatsObjectID>(player.GetEntityID()),
-                gamedataStatPoolType.Memory,
-                false
-            )
+            .GetStatPoolValue(playerStatsObjectId, gamedataStatPoolType.Memory, false)
     );
 
     let asNPC = this as NPCPuppet;
