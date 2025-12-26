@@ -121,9 +121,9 @@ namespace RunQuickhackOnTarget
 {
 constexpr char Name[] = "run_quickhack_on_target";
 constexpr char Desc[] =
-    R"(Run a quickhack on a target. Quickhacks and targets can be queried with query_quickhackable_targets. Note that the entity ID must be exact.)";
+    R"(Run quickhacks on a target. Quickhacks and targets can be queried with query_quickhackable_targets and are also provided once a quickhackable entity is scanned by the player. Note that the entity ID and quickhack IDs must be exact.)";
 constexpr char JsonSchema[] =
-    R"({ "additionalProperties": false, "type": "object", "title": "SelectQuickhack", "properties": { "entityId": { "description": "The entity ID of the quickhack target. This MUST be exact.", "type": "integer" }, "id": { "description": "The ID of the selected quickhack from the provided options.", "type": "integer"  } }, "required": ["entityId", "id"] })";
+    R"({ "additionalProperties": false, "type": "object", "title": "SelectQuickhack", "properties": { "entityId": { "description": "The entity ID of the quickhack target. This MUST be exact.", "type": "integer" }, "hacks": { "description": "The IDs of the selected quickhack from the provided options. If this is over max queue size, overflowing quickhacks will be dropped.", "type": "array", "items": { "type": "number" }  } }, "required": ["entityId", "hacks"] })";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace RunQuickhackOnTarget

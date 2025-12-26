@@ -63,6 +63,9 @@ public:
     // How much RAM do we have?
     int m_ramAmount{};
 
+    // What's the maximum quickhack queue size?
+    int m_maxQueueSize{};
+
     DynArray<Handle<NeuroQuickhackDto>> m_quickhacks{};
 
     RTTI_IMPL_TYPEINFO(NeuroQuickhackDataDto);
@@ -151,6 +154,7 @@ struct NeuroQuickhackDataJson
     std::string faction{};
 
     int ramAmount{};
+    int maxQueueSize{};
 
     bool isInanimate{};
     bool isHostile{};
@@ -166,6 +170,7 @@ struct NeuroQuickhackDataJson
         json.targetName = aData->m_targetName.c_str();
         json.faction = aData->m_faction.c_str();
         json.ramAmount = aData->m_ramAmount;
+        json.maxQueueSize = aData->m_maxQueueSize;
         json.isInanimate = aData->m_isInanimate;
         json.isHostile = aData->m_isHostile;
         json.isBoss = aData->m_isBoss;
@@ -196,7 +201,7 @@ struct NeuroQuickhackDataJson
 struct NeuroQuickhackResponseJson
 {
     uint64_t entityId{};
-    int id{};
+    std::vector<int> hacks{};
 };
 
 struct NeuroSMSChoiceEntryJson
@@ -446,8 +451,7 @@ bool mod::NeuroActionResponseMessage::IsResponseToForcedAction() const
 {
     // Note: evil hardcode
     // Evil hardcode has claimed 1 (one) action to date
-    return m_actionName == "select_dialogue_choice" || m_actionName == "run_quickhack_on_target" ||
-           m_actionName == "select_sms_message_choice";
+    return m_actionName == "select_dialogue_choice" || m_actionName == "select_sms_message_choice";
 }
 
 void mod::NeuroContextMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
@@ -666,14 +670,35 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                if (json.id < 0)
+                if (json.hacks.empty())
                 {
-                    response->m_actionResponse = "Invalid quickhack ID provided.";
+                    response->m_actionResponse = "No quickhack IDs provided.";
+                    break;
+                }
+
+                DynArray<int> hackIds{};
+
+                auto invalidIdProvided = false;
+
+                for (auto i : json.hacks)
+                {
+                    if (i < 0)
+                    {
+                        response->m_actionResponse = "Invalid quickhack ID provided.";
+                        invalidIdProvided = true;
+                        break;
+                    }
+
+                    hackIds.PushBack(i);
+                }
+
+                if (invalidIdProvided)
+                {
                     break;
                 }
 
                 if (!CallVirtual(this, "OnQuickhackTarget", response->m_actionResponse, ent::EntityID{json.entityId},
-                                 json.id))
+                                 hackIds))
                 {
                     response->m_actionResponse = "Failed to call responder method.";
                 }
@@ -1133,26 +1158,30 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 
                             if (entry->m_quickhacks.size > 0u)
                             {
-                                auto hasValid = false;
+                                DynArray<int> hackIds{};
 
-                                constexpr auto MaxIterations = 10;
-
-                                for (auto i = 0; i < MaxIterations; i++)
+                                for (auto i = 0; i < entry->m_maxQueueSize; i++)
                                 {
-                                    auto idx = __rdtsc() % (std::uint64_t)(entry->m_quickhacks.size);
+                                    constexpr auto MaxIterations = 10;
 
-                                    const auto& quickhackEntry = entry->m_quickhacks[idx];
-
-                                    if (quickhackEntry->m_canUse)
+                                    for (auto i = 0; i < MaxIterations; i++)
                                     {
-                                        CString response{};
+                                        auto idx = __rdtsc() % (std::uint64_t)(entry->m_quickhacks.size);
 
-                                        CallVirtual(this, "OnQuickhackTarget", response, entry->m_targetEntityId,
-                                                    quickhackEntry->m_id);
+                                        const auto& quickhackEntry = entry->m_quickhacks[idx];
 
-                                        break;
+                                        if (quickhackEntry->m_canUse)
+                                        {
+                                            hackIds.PushBack(quickhackEntry->m_id);
+                                            break;
+                                        }
                                     }
                                 }
+
+                                CString ret{};
+                                CallVirtual(this, "OnQuickhackTarget", ret, entry->m_targetEntityId, hackIds);
+                                // Breakpoint
+                                __nop();
                             }
                         }
 
@@ -1401,7 +1430,8 @@ void mod::NeuroSystem::OnQuickhackDataProvided(Handle<Impl::NeuroQuickhackDataDt
 
     auto str = fmt::format(
         "You are scanning an entity. The entity's information is specified in the following data. You can use "
-        "the mentioned quickhacks using the run_quickhack_on_target action. If you want more enemies to quickhack, use the query_quickhackable_targets action. Data:\r\n{}",
+        "the mentioned quickhacks using the run_quickhack_on_target action. If you want more enemies to quickhack, use "
+        "the query_quickhackable_targets action. Data:\r\n{}",
         json);
 
     SendContext(str.c_str());
