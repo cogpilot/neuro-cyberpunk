@@ -85,54 +85,7 @@ public native class NeuroSystem extends IGameSystem {
         this.SendContext(this.OnQueryAllQuests());
     }
 
-    private final func OnQuickhackTargetInternal(
-        entId: EntityID,
-        hack: ref<QuickhackData>,
-        player: ref<PlayerPuppet>,
-        first: Bool
-    ) -> String {
-        if hack.m_isLocked {
-            return "Hack is locked and can\'t be used!";
-        }
-
-        if NotEquals(hack.m_actionState, EActionInactivityReson.Ready) {
-            return "Hack is not ready for use!";
-        }
-
-        let cmd = new QuickSlotCommandUsed();
-        cmd.action = hack.m_action;
-
-        if !first {
-            hack.m_action.m_isQueuedAction = true;
-            hack.m_action.m_isActionQueueingUsed = true;
-        }
-
-        player.QueueEventForEntityID(entId, cmd);
-
-        if player.GetTakeOverControlSystem().IsDeviceControlled() {
-            let hackUsed = new QhackExecuted();
-            player
-                .QueueEventForEntityID(
-                    player
-                        .GetTakeOverControlSystem()
-                        .GetControlledObject()
-                        .GetEntityID(),
-                    hackUsed
-                );
-        }
-
-        let title = hack.m_title;
-
-        if StrLen(title) > 0 {
-            // This crashes for some reason, maybe the strlen() check will help?
-            let localized = GetLocalizedText(title);
-            return s"Dispatched quickhack \"\(localized)\" to target!";
-        }
-
-        return "Dispatched quickhack to target!";
-    }
-
-    public cb func OnQuickhackTarget(entId: EntityID, hackIds: [Int32]) -> String {
+    public cb func OnQuickhackTarget(entId: EntityID, hackId: Int32) -> String {
         // Note: could be cool if Neuro could queue multiple quickhacks, but don't see good way to do that yet
         let ent = GameInstance.FindEntityByID(GetGameInstance(), entId);
 

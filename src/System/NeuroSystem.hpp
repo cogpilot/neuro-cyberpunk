@@ -21,8 +21,9 @@
 
 namespace Impl
 {
-class NeuroQuickhackDataDto;
 class NeuroPhoneMessageDto;
+class NeuroQuickhackDataDto;
+class NeuroQuickhackResponseDto;
 } // namespace Impl
 
 namespace mod
@@ -135,7 +136,8 @@ struct NeuroChoiceContext
     bool m_isTimed{};
     float m_timer{};
 
-    static NeuroChoiceContext FromGameData(const Red::game::interactions::vis::ListChoiceData& aChoiceData, Red::CString& aHubTitle, int aId, bool aIsTimed, float aChoiceTimer);
+    static NeuroChoiceContext FromGameData(const Red::game::interactions::vis::ListChoiceData& aChoiceData,
+                                           Red::CString& aHubTitle, int aId, bool aIsTimed, float aChoiceTimer);
 };
 
 /**
@@ -170,6 +172,8 @@ public:
     static constexpr auto MaxKeepTrackOfForcedActions = 5.f;
 
     static constexpr auto ChoicehubDelayBeforeForcedAction = 1.5f;
+
+    static constexpr auto MaximumQuickhackQueueLength = 4u;
 
     // Lock to access Neuro socket
     Red::SharedSpinLock m_socketLock{};
@@ -231,17 +235,21 @@ public:
 #pragma endregion
 
 #pragma region QuickhackHandling
-    Red::ent::EntityID m_quickhackActionTargetId{};
+    // Notes on how this works:
+    // Every tick one quickhack per entity is drained from the queue and sent to target entity
+    // This should allow for queue quickhacks and multitarget
+    Red::SharedSpinLock m_quickhackLock{};
+    Red::DynArray<Red::Handle<Impl::NeuroQuickhackResponseDto>> m_quickhackDataQueue{};
 #pragma endregion
 
 #pragma region SMSMessageHandling
     Red::SharedSpinLock m_smsLock{};
     Red::WeakHandle<Red::IScriptable> m_actionMessengerDialogViewController{};
 #pragma endregion
-   
+
 #pragma region Fuzzer
     Red::SharedSpinLock m_fuzzerLock{};
-    
+
     bool m_fuzzerActive{};
     int m_currentFuzzerFunction{};
     std::uint64_t m_fuzzerCalls{};
@@ -307,9 +315,17 @@ public:
     void TickSceneInfo(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
 
     /**
-    * \brief Tick function registered by update registrar to spam functions to stress test responses for races/whatnot.
-    * \param aQueue The associated frame job queue.
-    */
+     * \brief Tick function registered by the update registrar to update quickhack information.
+     *
+     * \param aFrameInfo The frame's information.
+     * \param aJobQueue The job queue provided by the update registrar.
+     */
+    void TickQuickhackQueue(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
+
+    /**
+     * \brief Tick function registered by update registrar to spam functions to stress test responses for races/whatnot.
+     * \param aQueue The associated frame job queue.
+     */
     void TickFuzzer(Red::JobQueue& aQueue);
 
     /**
@@ -351,7 +367,8 @@ public:
     void FireScriptCallbacks(bool aState);
 
     /**
-     * \brief Fire all newly registered callbacks with Neuro connection state and clean the newly registered callback list.
+     * \brief Fire all newly registered callbacks with Neuro connection state and clean the newly registered callback
+     * list.
      * \param aState The current connection state.
      */
     void FirePendingCallbacks(bool aState);
@@ -369,6 +386,15 @@ public:
      * so this is safe.
      */
     static NeuroSystem* GetInstance();
+
+    /**
+     * \brief Append quickhack information to the quickhack queue. Note that if there already is quickhack information
+     * associated with the target entity ID, the quickhack information will be appended to the existing information. The
+     * maximum queue length cannot exceed 4.
+     * \param aQuickhackResponse The quickhack information.
+     * \return Whether or not appending the quickhack information succeeded.
+     */
+    bool AppendToQuickhackQueue(Red::Handle<Impl::NeuroQuickhackResponseDto>& aQuickhackResponse);
 #pragma endregion
 
 #pragma region Debug
@@ -388,8 +414,8 @@ public:
     void InjectKeypressChain(const Red::DynArray<Red::EInputKey>& aKeys);
 
     /**
-    * \brief Toggle the query action fuzzer. Available via RTTI as well.
-    */
+     * \brief Toggle the query action fuzzer. Available via RTTI as well.
+     */
     void ToggleFuzzer();
 #pragma endregion
 
@@ -432,15 +458,16 @@ public:
     void ResetBadConnectionCounter();
 
     /**
-    * \brief Check if Neuro connection is alive.
-    */
+     * \brief Check if Neuro connection is alive.
+     */
     bool IsConnectionAlive();
 
     /**
-    * \brief Register a callback for Neuro socket connection state. The function name is fixed as "OnNeuroSocketUpdate".
-    * New callbacks will have this fired the next tick. The function may be called several times in one tick.
-    * \param aContext The object the callback is owned by.
-    */
+     * \brief Register a callback for Neuro socket connection state. The function name is fixed as
+     * "OnNeuroSocketUpdate". New callbacks will have this fired the next tick. The function may be called several times
+     * in one tick.
+     * \param aContext The object the callback is owned by.
+     */
     void RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext);
 
     /**
