@@ -1,4 +1,5 @@
 #include <Shared/Raw/Ink/InkSystem.hpp>
+#include <Shared/Raw/JSON/JSON.hpp>
 #include <Shared/Raw/LocalizationSystem/LocalizationSystem.hpp>
 #include <Shared/Raw/MappinSystem/MappinSystem.hpp>
 #include <Shared/Raw/Player/Player.hpp>
@@ -84,6 +85,15 @@ public:
     RTTI_IMPL_ALLOCATOR();
 };
 
+class NeuroQuickhackResponseDto : public IScriptable
+{
+public:
+    ent::EntityID m_targetEntityId{};
+    DynArray<int> m_usedQuickhackIds{};
+    std::uint32_t m_currentQuickhackIndex{};
+    RTTI_IMPL_TYPEINFO(NeuroQuickhackResponseDto);
+    RTTI_IMPL_ALLOCATOR();
+};
 /**
  * \brief For interop with Glaze JSON serialization/deserialization, as I'm not sure on being able to make REDengine
  * types work with Glaze.
@@ -196,7 +206,7 @@ struct NeuroQuickhackDataJson
 struct NeuroQuickhackResponseJson
 {
     uint64_t entityId{};
-    int id{};
+    std::vector<int> id{};
 };
 
 struct NeuroSMSChoiceEntryJson
@@ -672,11 +682,13 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                if (!CallVirtual(this, "OnQuickhackTarget", response->m_actionResponse, ent::EntityID{json.entityId},
-                                 json.id))
+                if (!AppendToQuickhackQueue(json.entityId, json.id, response->m_actionResponse))
                 {
-                    response->m_actionResponse = "Failed to call responder method.";
+                    response->m_actionResponse = "Failed to defer quickhack information.";
                 }
+
+                response->m_actionResponse = "Quickhack information queued.";
+                
                 break;
             }
             case CNAME_HASH("select_sms_message_choice"):
@@ -1070,6 +1082,53 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
         });
 }
 
+void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
+{
+    aJobQueue.Dispatch(
+        [this]()
+        {
+            std::unique_lock lock(m_quickhackLock);
+            DynArray<Handle<Impl::NeuroQuickhackResponseDto>> removed{};
+
+            for (auto& i : m_quickhackDataQueue)
+            {
+                if (i->m_currentQuickhackIndex >= i->m_usedQuickhackIds.size)
+                {
+                    // Done with this one
+                    removed.PushBack(i);
+                    continue;
+                }
+
+                const auto currId = i->m_usedQuickhackIds[i->m_currentQuickhackIndex];
+
+                auto status = false;
+
+                if (!CallVirtual(this, "QuickhackTargetInternal", status, i->m_targetEntityId, currId))
+                {
+                    Context::Spew("Failed to call QuickhackTargetInternal for quickhack index {} on entity ID {}.",
+                                  currId, i->m_targetEntityId.hash);
+                    removed.PushBack(i);
+                    continue;
+                }
+
+                if (!status)
+                {
+                    Context::Spew("Failed to quickhack target {} with hack index {}, dropping rest of queue.",
+                                  i->m_targetEntityId.hash, currId);
+                    removed.PushBack(i);
+                    continue;
+                }
+
+                i->m_currentQuickhackIndex++;
+            }
+
+            for (const auto& i : removed)
+            {
+                m_quickhackDataQueue.Remove(i);
+            }
+        });
+}
+
 void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 {
     static constexpr const char* NoParameterActionNames[] = {
@@ -1242,6 +1301,43 @@ void mod::NeuroSystem::FirePendingCallbacks(bool aState)
     m_newCallbackList.Clear();
 }
 
+bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackResponseDto>& aData)
+{
+    std::unique_lock lock(m_quickhackLock);
+
+    if (aData->m_usedQuickhackIds.size == 0u || aData->m_usedQuickhackIds.size > MaximumQuickhackQueueLength)
+    {
+        // Nothing to queue or too much
+        return false;
+    }
+
+    // Check already present quickhacks
+    for (auto& i : m_quickhackDataQueue)
+    {
+        if (i->m_targetEntityId == aData->m_targetEntityId)
+        {
+            auto newSize = aData->m_usedQuickhackIds.size + (i->m_usedQuickhackIds.size - i->m_currentQuickhackIndex);
+
+            if (newSize > MaximumQuickhackQueueLength)
+            {
+                // Too many quickhacks queued for this entity
+                return false;
+            }
+
+            // Append new quickhacks
+            for (auto& j : aData->m_usedQuickhackIds)
+            {
+                i->m_usedQuickhackIds.PushBack(j);
+            }
+            return true;
+        }
+    }
+
+    m_quickhackDataQueue.PushBack(aData);
+
+    return true;
+}
+
 bool mod::NeuroSystem::IsPreGame()
 {
     auto handler = shared::raw::Ink::InkSystem::Get()->m_requestsHandler.Lock();
@@ -1401,7 +1497,8 @@ void mod::NeuroSystem::OnQuickhackDataProvided(Handle<Impl::NeuroQuickhackDataDt
 
     auto str = fmt::format(
         "You are scanning an entity. The entity's information is specified in the following data. You can use "
-        "the mentioned quickhacks using the run_quickhack_on_target action. If you want more enemies to quickhack, use the query_quickhackable_targets action. Data:\r\n{}",
+        "the mentioned quickhacks using the run_quickhack_on_target action. If you want more enemies to quickhack, use "
+        "the query_quickhackable_targets action. Data:\r\n{}",
         json);
 
     SendContext(str.c_str());
@@ -1482,6 +1579,7 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
                                    TickInputQueue(aFrameInfo);
                                    TickSceneInfo(aFrameInfo, aJobQueue);
                                    TickCommunication(aFrameInfo, aJobQueue);
+                                   TickQuickhackQueue(aFrameInfo, aJobQueue);
                                });
 }
 
@@ -1551,6 +1649,11 @@ RTTI_DEFINE_CLASS(Impl::NeuroPhoneMessageDto, {
     RTTI_PROPERTY(m_convoNameIfApplicable);
     RTTI_PROPERTY(m_messageHistory);
     RTTI_PROPERTY(m_responseOptions);
+});
+
+RTTI_DEFINE_CLASS(Impl::NeuroQuickhackResponseDto, {
+    RTTI_PROPERTY(m_targetEntityId);
+    RTTI_PROPERTY(m_usedQuickhackIds);
 });
 
 RTTI_DEFINE_CLASS(mod::NeuroSystem, {
