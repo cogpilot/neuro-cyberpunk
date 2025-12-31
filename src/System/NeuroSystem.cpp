@@ -13,6 +13,7 @@
 
 #include <System/NativeResponses.hpp>
 #include <System/NeuroSystem.hpp>
+#include <Util/ScriptUtil.hpp>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -88,13 +89,13 @@ public:
     RTTI_IMPL_ALLOCATOR();
 };
 
-class NeuroQuickhackResponseDto : public IScriptable
+class NeuroQuickhackQueueData : public IScriptable
 {
 public:
     ent::EntityID m_targetEntityId{};
     DynArray<int> m_usedQuickhackIds{};
     std::uint32_t m_currentQuickhackIndex{};
-    RTTI_IMPL_TYPEINFO(NeuroQuickhackResponseDto);
+    RTTI_IMPL_TYPEINFO(NeuroQuickhackQueueData);
     RTTI_IMPL_ALLOCATOR();
 };
 /**
@@ -509,6 +510,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             CallVirtual(this, "OnLogNeuroAction", response->m_actionName);
 
             // Handle action
+            // TODO: refactor all JSON using actions to use REDengine JSON parser, current way is ugly
             switch (CNAME_HASH(response->m_actionName.c_str()))
             {
             case CNAME_HASH("query_money"):
@@ -707,14 +709,20 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                if (!CallVirtual(this, "OnQuickhackTarget", response->m_actionResponse, ent::EntityID{json.entityId},
-                                 hackIds))
+                auto info = MakeHandle<Impl::NeuroQuickhackQueueData>();
+
+                info->m_currentQuickhackIndex = 0u;
+                info->m_targetEntityId = json.entityId;
+                info->m_usedQuickhackIds = std::move(hackIds);
+
+                if (!AppendToQuickhackQueue(info))
                 {
                     response->m_actionResponse = "Failed to defer quickhack information.";
+                    break;
                 }
 
                 response->m_actionResponse = "Quickhack information queued.";
-                
+
                 break;
             }
             case CNAME_HASH("select_sms_message_choice"):
@@ -781,23 +789,26 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                             return;
                         }
 
-                        std::vector<Impl::JSON::NeuroQuickhackDataJson> jsonArray{};
+                        DynArray<CString> data{};
 
+                        // This might actually be slower than Glaze cuz REDengine (rapidjson?) impl might be less optimized
                         for (const auto& i : quickhackDataArray)
                         {
-                            jsonArray.push_back(Impl::JSON::NeuroQuickhackDataJson::FromGame(i));
+                            shared::raw::JSON::Serializer serializer{i};
+
+                            CString out{};
+
+                            if (!serializer.Serialize(out))
+                            {
+                                response->m_actionResponse = "Failed to serialize quickhack data to JSON.";
+                                AddMessage(response);
+                                return;
+                            }
+
+                            data.PushBack(std::move(out));
                         }
 
-                        std::string json{};
-
-                        if (glz::write_json(jsonArray, json))
-                        {
-                            response->m_actionResponse = "Failed to serialize quickhack data to JSON.";
-                            AddMessage(response);
-                            return;
-                        }
-
-                        response->m_actionResponse = json.c_str();
+                        response->m_actionResponse = util::StringUtils::BuildString(data, "\r\n");
 
                         AddMessage(response);
                         Context::Spew("Deferred action '{}' handled in {} ms", response->m_actionName.c_str(),
@@ -1114,7 +1125,7 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
         [this]()
         {
             std::unique_lock lock(m_quickhackLock);
-            DynArray<Handle<Impl::NeuroQuickhackResponseDto>> removed{};
+            DynArray<Handle<Impl::NeuroQuickhackQueueData>> removed{};
 
             for (auto& i : m_quickhackDataQueue)
             {
@@ -1131,16 +1142,12 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
 
                 if (!CallVirtual(this, "QuickhackTargetInternal", status, i->m_targetEntityId, currId))
                 {
-                    Context::Spew("Failed to call QuickhackTargetInternal for quickhack index {} on entity ID {}.",
-                                  currId, i->m_targetEntityId.hash);
                     removed.PushBack(i);
                     continue;
                 }
 
                 if (!status)
                 {
-                    Context::Spew("Failed to quickhack target {} with hack index {}, dropping rest of queue.",
-                                  i->m_targetEntityId.hash, currId);
                     removed.PushBack(i);
                     continue;
                 }
@@ -1209,39 +1216,24 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
                                           NoParameterActionNames[fuzzerFunc]);
                         }
 
-                        if (quickhackDataArray.size > 0u)
+                        for (const auto& i : quickhackDataArray)
                         {
-                            // Note: bad random but who cares?
-                            auto targetIdx = __rdtsc() % (std::uint64_t)(quickhackDataArray.size);
+                            const auto hackCount = i->m_quickhacks.size;
 
-                            const auto& entry = quickhackDataArray[targetIdx];
-
-                            if (entry->m_quickhacks.size > 0u)
+                            if (hackCount > 0u)
                             {
-                                DynArray<int> hackIds{};
+                                auto data = MakeHandle<Impl::NeuroQuickhackQueueData>();
 
-                                for (auto i = 0; i < entry->m_maxQueueSize; i++)
+                                data->m_targetEntityId = i->m_targetEntityId;
+
+                                for (auto j = 0; j < i->m_maxQueueSize; j++)
                                 {
-                                    constexpr auto MaxIterations = 10;
+                                    auto idx = (uint32_t)(__rdtsc()) % hackCount;
 
-                                    for (auto i = 0; i < MaxIterations; i++)
-                                    {
-                                        auto idx = __rdtsc() % (std::uint64_t)(entry->m_quickhacks.size);
-
-                                        const auto& quickhackEntry = entry->m_quickhacks[idx];
-
-                                        if (quickhackEntry->m_canUse)
-                                        {
-                                            hackIds.PushBack(quickhackEntry->m_id);
-                                            break;
-                                        }
-                                    }
+                                    data->m_usedQuickhackIds.PushBack(i->m_quickhacks[idx]->m_id);
                                 }
 
-                                CString ret{};
-                                CallVirtual(this, "OnQuickhackTarget", ret, entry->m_targetEntityId, hackIds);
-                                // Breakpoint
-                                __nop();
+                                AppendToQuickhackQueue(data);
                             }
                         }
 
@@ -1331,7 +1323,7 @@ void mod::NeuroSystem::FirePendingCallbacks(bool aState)
     m_newCallbackList.Clear();
 }
 
-bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackResponseDto>& aData)
+bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueData>& aData)
 {
     std::unique_lock lock(m_quickhackLock);
 
@@ -1517,21 +1509,22 @@ bool mod::NeuroSystem::HasForcedActionCooldown()
 
 void mod::NeuroSystem::OnQuickhackDataProvided(Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo)
 {
-    auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(aQuickhackInfo);
-    std::string json{};
+    shared::raw::JSON::Serializer serializer{aQuickhackInfo};
 
-    if (glz::write_json(jsonData, json))
+    DynArray<CString> builder{
+        "You are scanning an entity. The entity's information is specified in the following data. You can use "
+        "the mentioned quickhacks using the run_quickhack_on_target action. If you want more enemies to quickhack, use "
+        "the query_quickhackable_targets action. Data:",
+        ""};
+
+    if (!serializer.Serialize(builder[1]))
     {
         return;
     }
 
-    auto str = fmt::format(
-        "You are scanning an entity. The entity's information is specified in the following data. You can use "
-        "the mentioned quickhacks using the run_quickhack_on_target action. If you want more enemies to quickhack, use "
-        "the query_quickhackable_targets action. Data:\r\n{}",
-        json);
+    auto str = util::StringUtils::BuildString(builder, "\r\n");
 
-    SendContext(str.c_str());
+    SendContext(str);
 }
 
 void mod::NeuroSystem::OnSMSMessageDataProvided(Handle<Impl::NeuroPhoneMessageDto>& aMessageInfo)
@@ -1540,21 +1533,21 @@ void mod::NeuroSystem::OnSMSMessageDataProvided(Handle<Impl::NeuroPhoneMessageDt
 
     m_actionMessengerDialogViewController = aMessageInfo->m_messageController;
 
-    auto jsonData = Impl::JSON::NeuroSMSJson::FromGame(aMessageInfo);
+    // Zero out to not make Neuro confused/break serializer
+    aMessageInfo->m_messageController = nullptr;
 
     auto msg = MakeHandle<NeuroForcedActionMessage>();
 
     msg->m_query = "You have options to reply to a phone message. The choices are provided in the action context. If "
                    "you do not wish to reply to the message, pass -1 as the message ID.";
+    
+    shared::raw::JSON::Serializer serializer{aMessageInfo};
 
-    std::string json{};
-
-    if (glz::write_json(jsonData, json))
+    if (!serializer.Serialize(msg->m_state))
     {
         return;
     }
-
-    msg->m_state = json.c_str();
+   
     msg->m_actionName = "select_sms_message_choice";
 
     AddMessage(msg);
@@ -1642,6 +1635,9 @@ void mod::NeuroSystem::OnWorldDetached(world::RuntimeScene* aScene)
 
     std::unique_lock inputLock(m_inputLock);
     m_injectedKeyQueue.Clear();
+
+    std::unique_lock quickhackLock(m_quickhackLock);
+    m_quickhackDataQueue.Clear();
 }
 
 void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)
@@ -1658,6 +1654,7 @@ RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDataDto, {
     RTTI_PROPERTY(m_isInanimate);
     RTTI_PROPERTY(m_ramAmount);
     RTTI_PROPERTY(m_quickhacks);
+    RTTI_PROPERTY(m_maxQueueSize);
 });
 
 RTTI_DEFINE_CLASS(Impl::NeuroQuickhackDto, {
@@ -1681,7 +1678,7 @@ RTTI_DEFINE_CLASS(Impl::NeuroPhoneMessageDto, {
     RTTI_PROPERTY(m_responseOptions);
 });
 
-RTTI_DEFINE_CLASS(Impl::NeuroQuickhackResponseDto, {
+RTTI_DEFINE_CLASS(Impl::NeuroQuickhackQueueData, {
     RTTI_PROPERTY(m_targetEntityId);
     RTTI_PROPERTY(m_usedQuickhackIds);
 });

@@ -23,6 +23,16 @@ public native class NeuroQuickhackDataDto {
     public native let isInanimate: Bool;
     public native let ramAmount: Int32;
     public native let quickhacks: [ref<NeuroQuickhackDto>];
+    public native let maxQueueSize: Int32;
+
+    public final func HasUsableQuickhacks() -> Bool {
+        for hack in this.quickhacks {
+            if hack.canUse {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 public native class NeuroPhoneMessageDto {
@@ -85,133 +95,73 @@ public native class NeuroSystem extends IGameSystem {
         this.SendContext(this.OnQueryAllQuests());
     }
 
-    public cb func OnQuickhackTarget(entId: EntityID, hackId: Int32) -> String {
-        // Note: could be cool if Neuro could queue multiple quickhacks, but don't see good way to do that yet
+    public cb func QuickhackTargetInternal(entId: EntityID, hackId: Int32) -> Bool {
         let ent = GameInstance.FindEntityByID(GetGameInstance(), entId);
 
         if !IsDefined(ent) {
-            return "Failed to find entity!";
+            return false;
         }
 
         let asObject = ent as GameObject;
 
         if !IsDefined(asObject) {
             // Should never happen
-            return "Entity is not game object!";
+            return false;
         }
 
         if !asObject.IsQuickHackAble() {
-            return "Entity cannot be quickhacked!";
+            return false;
         }
 
-        let player = GameInstance.GetPlayerSystem(GetGameInstance()).GetLocalPlayerControlledGameObject() as PlayerPuppet;
-
-        let quickhackActions: [ref<QuickhackData>];
-        // Note: very hacky
-
-        let asDevice = asObject as Device;
-        let asScriptedPuppet = asObject as ScriptedPuppet;
-        let asVehicle = asObject as VehicleObject;
-
-        let maxQueueSize = 1;
-
-        if IsDefined(asDevice) {
-            if asDevice.m_isQhackUploadInProgerss && !asDevice.IsActionQueueEnabled() || asDevice.IsActionQueueFull() {
-                return "Device is already too hacked!";
-            }
-            let ctx = asDevice
-                .GetDevicePS()
-                .GenerateContext(
-                    gamedeviceRequestType.Remote,
-                    Device.GetInteractionClearance(),
-                    player,
-                    entId
-                );
-
-            let actions: [ref<DeviceAction>];
-            asDevice.GetDevicePS().GetRemoteActions(actions, ctx);
-            QuickHackableHelper
-                .TranslateActionsIntoQuickSlotCommands(actions, quickhackActions, asDevice, asDevice.GetDevicePS());
-        } else if IsDefined(asScriptedPuppet) {
-            let ctx = asScriptedPuppet
-                .GetPS()
-                .GenerateContext(
-                    gamedeviceRequestType.Remote,
-                    Device.GetInteractionClearance(),
-                    player,
-                    entId
-                );
-
-            let actionRecords: [wref<ObjectAction_Record>];
-            let puppetActions: [ref<PuppetAction>];
-
-            asScriptedPuppet.GetRecord().ObjectActions(actionRecords);
-            asScriptedPuppet.GetPS().GetAllChoices(actionRecords, ctx, puppetActions);
-            asScriptedPuppet
-                .TranslateChoicesIntoQuickSlotCommands(puppetActions, quickhackActions);
-
-            maxQueueSize = FloorF(
-                GameInstance
-                    .GetStatsSystem(GetGameInstance())
-                    .GetStatValue(
-                        Cast<StatsObjectID>(player.GetEntityID()),
-                        gamedataStatType.QuickHackQueueSize
-                    )
-            );
-
-            // Already uploading hacks
-            maxQueueSize -= asScriptedPuppet.GetDeviceActionQueueSize();
-
-            if maxQueueSize == 0 {
-                return "Cannot quickhack target more!";
-            }
-        } else if IsDefined(asVehicle) {
-            if asVehicle.m_isQhackUploadInProgress && !asVehicle.IsActionQueueEnabled() || asVehicle.IsActionQueueFull() {
-                return "Vehicle is already too hacked!";
-            }
-
-            let ctx = asVehicle
-                .GetVehiclePS()
-                .GenerateContext(
-                    gamedeviceRequestType.Remote,
-                    Device.GetInteractionClearance(),
-                    player,
-                    entId
-                );
-
-            let actions: [ref<DeviceAction>];
-            asVehicle.GetVehiclePS().GetRemoteActions(actions, ctx);
-
-            QuickHackableHelper
-                .TranslateActionsIntoQuickSlotCommands(actions, quickhackActions, asVehicle, asVehicle.GetVehiclePS());
-        }
+        let quickhackActions = asObject.GetQuickhackData();
 
         let sz = ArraySize(quickhackActions);
 
-        let responseStringBuilder: [String];
-        let cnt = 0;
+        if sz < hackId {
+            return false;
+        }
 
-        for hackId in hackIds {
-            if cnt >= maxQueueSize {
-                break;
-            }
+        let hack = quickhackActions[hackId];
 
-            if sz < hackId {
-                let s = s"\(hackId) Quickhack ID no longer present in list!";
-                ArrayPush(responseStringBuilder, s);
-            } else {
-                let hack = quickhackActions[hackId];
+        if hack.m_isLocked {
+            return false;
+        }
 
-                ArrayPush(
-                    responseStringBuilder,
-                    this.OnQuickhackTargetInternal(entId, hack, player, cnt == 0)
+        if NotEquals(hack.m_actionState, EActionInactivityReson.Ready) {
+            return false;
+        }
+
+        let player = GetPlayer(GetGameInstance());
+
+        let cmd = new QuickSlotCommandUsed();
+        cmd.action = hack.m_action;
+
+        player.QueueEventForEntityID(entId, cmd);
+
+        if player.GetTakeOverControlSystem().IsDeviceControlled() {
+            let hackUsed = new QhackExecuted();
+            player
+                .QueueEventForEntityID(
+                    player
+                        .GetTakeOverControlSystem()
+                        .GetControlledObject()
+                        .GetEntityID(),
+                    hackUsed
                 );
+        }
 
-                cnt += 1;
+        let hackName = hack.m_title;
+
+        if IsStringValid(hackName) {
+            let localizedName = GetLocalizedText(hackName);
+
+            if IsStringValid(localizedName) {
+                this
+                    .SendContext(s"Dispatched quickhack \(localizedName) on a target.");
             }
         }
 
-        return StringUtils.BuildString(responseStringBuilder, "\r\n");
+        return true;
     }
 
     public cb func OnSelectDialogueChoice(id: Int32, out success: Bool) -> String {

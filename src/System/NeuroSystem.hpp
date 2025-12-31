@@ -23,7 +23,7 @@ namespace Impl
 {
 class NeuroPhoneMessageDto;
 class NeuroQuickhackDataDto;
-class NeuroQuickhackResponseDto;
+class NeuroQuickhackQueueData;
 } // namespace Impl
 
 namespace mod
@@ -239,7 +239,7 @@ public:
     // Every tick one quickhack per entity is drained from the queue and sent to target entity
     // This should allow for queue quickhacks and multitarget
     Red::SharedSpinLock m_quickhackLock{};
-    Red::DynArray<Red::Handle<Impl::NeuroQuickhackResponseDto>> m_quickhackDataQueue{};
+    Red::DynArray<Red::Handle<Impl::NeuroQuickhackQueueData>> m_quickhackDataQueue{};
 #pragma endregion
 
 #pragma region SMSMessageHandling
@@ -394,7 +394,7 @@ public:
      * \param aQuickhackResponse The quickhack information.
      * \return Whether or not appending the quickhack information succeeded.
      */
-    bool AppendToQuickhackQueue(Red::Handle<Impl::NeuroQuickhackResponseDto>& aQuickhackResponse);
+    bool AppendToQuickhackQueue(Red::Handle<Impl::NeuroQuickhackQueueData>& aQuickhackResponse);
 #pragma endregion
 
 #pragma region Debug

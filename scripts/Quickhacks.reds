@@ -100,6 +100,28 @@ public final func GetQuickhackData() -> [ref<QuickhackData>] {
 }
 
 @addMethod(GameObject)
+public final func GetMaxQuickhackQueueSizeForObject() -> Int32 {
+    let player = GetPlayer(GetGameInstance());
+    let playerStatsObjectId = Cast<StatsObjectID>(player.GetEntityID());
+    let asScriptedPuppet = this as ScriptedPuppet;
+    if IsDefined(asScriptedPuppet) {
+        let queueSize = 1;
+        if QuickHackableQueueHelper.IsQueuePerkBought(player) {
+            queueSize = FloorF(
+                GameInstance
+                    .GetStatsSystem(GetGameInstance())
+                    .GetStatValue(playerStatsObjectId, gamedataStatType.QuickHackQueueSize)
+            );
+        }
+        // Already uploading hacks
+        queueSize -= asScriptedPuppet.GetDeviceActionQueueSize();
+        return queueSize;
+    }
+
+    return 1;
+}
+
+@addMethod(GameObject)
 public final func TranslateQuickhackDataToNeuroDesc(data: [ref<QuickhackData>]) -> ref<NeuroQuickhackDataDto> {
     let hackCount = ArraySize(data);
 
@@ -107,38 +129,27 @@ public final func TranslateQuickhackDataToNeuroDesc(data: [ref<QuickhackData>]) 
         return null;
     }
 
+    let usableHackCount = this.GetMaxQuickhackQueueSizeForObject();
+
+    if usableHackCount == 0 {
+        return null;
+    }
+
     let player = GetPlayer(GetGameInstance());
     let collectedHackData = new NeuroQuickhackDataDto();
-
-    let playerStatsObjectId = Cast<StatsObjectID>(player.GetEntityID());
-    let queueSize = 1;
-
-    let asScriptedPuppet = this as ScriptedPuppet;
-    if QuickHackableQueueHelper.IsQueuePerkBought(player) {
-        if IsDefined(asScriptedPuppet) {
-            queueSize = FloorF(
-                GameInstance
-                    .GetStatsSystem(GetGameInstance())
-                    .GetStatValue(playerStatsObjectId, gamedataStatType.QuickHackQueueSize)
-            );
-
-            // Already uploading hacks
-            queueSize -= asScriptedPuppet.GetDeviceActionQueueSize();
-        }
-
-        // We can't actually upload anything
-        if queueSize == 0 {
-            return null;
-        }
-    }
 
     collectedHackData.targetEntityId = this.GetEntityID();
     collectedHackData.targetName = GetLocalizedText(this.GetDisplayName());
     collectedHackData.ramAmount = FloorF(
         GameInstance
             .GetStatPoolsSystem(GetGameInstance())
-            .GetStatPoolValue(playerStatsObjectId, gamedataStatPoolType.Memory, false)
+            .GetStatPoolValue(
+                Cast<StatsObjectID>(player.GetEntityID()),
+                gamedataStatPoolType.Memory,
+                false
+            )
     );
+    collectedHackData.maxQueueSize = usableHackCount;
 
     let asNPC = this as NPCPuppet;
 
@@ -277,7 +288,9 @@ public final func GetQuickhackableTargetsForNeuro() -> [ref<NeuroQuickhackDataDt
         let info = obj.GetNeuroQuickhackInfo();
 
         if IsDefined(info) {
-            ArrayPush(neuroTargets, info);
+            if info.HasUsableQuickhacks() {
+                ArrayPush(neuroTargets, info);
+            }
         }
 
         i += 1;
