@@ -68,6 +68,8 @@ target("NeuroInteractions")
         local target_file = target:targetfile()
         local plugin_folder = path.join(cp2077_path, "red4ext/plugins/NeuroInteractions/")
 
+        -- Note: while symlinks could be nice here,
+        -- symlinks seem to work poorly with folders on Windows so we can't just link script dir...
         os.mkdir(plugin_folder)
 
         os.cp(target_file, plugin_folder)
@@ -78,6 +80,13 @@ target("NeuroInteractions")
             ),
             plugin_folder
         )
+
+        -- Handle script dir if not present
+        if not os.exists(path.join(plugin_folder, "Scripts")) then
+            -- Note: this actually creates symbolic link to script dir in repo
+            -- This is good because we can edit directly in game directory and don't have to copy stuff over
+            os.cp(path.absolute("./scripts"), path.join(plugin_folder, "Scripts/"))
+        end
 
         cprint("${bright green}Installed plugin to " .. plugin_folder)
     end)
