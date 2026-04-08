@@ -8,13 +8,13 @@
 namespace Context
 {
 // Plugin identifier
-inline Red::PluginHandle PluginHandle;
+inline Red::v1::PluginHandle PluginHandle;
 
 // Pointer to function table for logging ETC
-inline const Red::Sdk* PluginSdk;
+inline const Red::v1::Sdk* PluginSdk;
 
 // Logger function table from plugin SDK
-inline Red::Logger* PluginLogger;
+inline Red::v1::Logger* PluginLogger;
 
 // Is game RTTI ready for use?
 inline bool m_rttiReady{};

@@ -221,7 +221,7 @@ struct NeuroSMSJson
         ret.convoNameIfApplicable = aData->m_convoNameIfApplicable.c_str();
         ret.chatHistory = aData->m_messageHistory.c_str();
 
-        for (auto i = 0u; i < aData->m_responseOptions.size; i++)
+        for (auto i = 0u; i < aData->m_responseOptions.Size(); i++)
         {
             NeuroSMSChoiceEntryJson choice{};
 
@@ -290,7 +290,7 @@ mod::NeuroChoiceContext mod::NeuroChoiceContext::FromGameData(
         {
             if (auto& asBluelinePart = Cast<game::interactions::ChoiceCaptionBluelinePart>(captionPart))
             {
-                if (asBluelinePart->blueline->parts.size == 0u)
+                if (asBluelinePart->blueline->parts.Size() == 0u)
                 {
                     continue;
                 }
@@ -953,9 +953,9 @@ void mod::NeuroSystem::TickInputQueue(FrameInfo& aInfo)
 {
     std::unique_lock lock(m_inputLock);
 
-    if (m_injectedKeyQueueIndex >= m_injectedKeyQueue.size)
+    if (m_injectedKeyQueueIndex >= m_injectedKeyQueue.Size())
     {
-        if (m_injectedKeyQueue.size > 0u)
+        if (m_injectedKeyQueue.Size() > 0u)
         {
             m_injectedKeyQueue.Clear();
             m_injectedKeyQueueIndex = 0u;
@@ -1124,14 +1124,14 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
                                           NoParameterActionNames[fuzzerFunc]);
                         }
 
-                        if (quickhackDataArray.size > 0u)
+                        if (quickhackDataArray.Size() > 0u)
                         {
                             // Note: bad random but who cares?
-                            auto targetIdx = __rdtsc() % (std::uint64_t)(quickhackDataArray.size);
+                            auto targetIdx = __rdtsc() % (std::uint64_t)(quickhackDataArray.Size());
 
                             const auto& entry = quickhackDataArray[targetIdx];
 
-                            if (entry->m_quickhacks.size > 0u)
+                            if (entry->m_quickhacks.Size() > 0u)
                             {
                                 auto hasValid = false;
 
@@ -1139,7 +1139,7 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 
                                 for (auto i = 0; i < MaxIterations; i++)
                                 {
-                                    auto idx = __rdtsc() % (std::uint64_t)(entry->m_quickhacks.size);
+                                    auto idx = __rdtsc() % (std::uint64_t)(entry->m_quickhacks.Size());
 
                                     const auto& quickhackEntry = entry->m_quickhacks[idx];
 
@@ -1291,7 +1291,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
     std::unique_lock lock(m_choicehubLock);
     m_choiceHubDataContext.m_choices.clear();
 
-    if (aRef.choiceHubs.size == 0u)
+    if (aRef.choiceHubs.Size() == 0u)
     {
         // Empty hub...
         if (m_countdownToForcedChoiceSelectionStarted)
@@ -1457,7 +1457,7 @@ void mod::NeuroSystem::RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> a
 void mod::NeuroSystem::UnregisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext)
 {
     std::unique_lock lock(m_callbackLock);
-    for (auto i = 0u; i < m_callbackList.size; i++)
+    for (auto i = 0u; i < m_callbackList.Size(); i++)
     {
         if (m_callbackList[i].instance == aContext.instance)
         {

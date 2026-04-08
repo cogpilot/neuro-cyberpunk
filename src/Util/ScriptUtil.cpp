@@ -15,10 +15,10 @@ public:
     {
         auto len = 0u;
 
-        for (auto i = 0u; i < aParts.size; i++)
+        for (auto i = 0u; i < aParts.Size(); i++)
         {
             len += aParts[i].Length();
-            if (i < (aParts.size - 1u))
+            if (i < (aParts.Size() - 1u))
             {
                 len += aDelimiter.Length();
             }
@@ -40,14 +40,14 @@ public:
         DynArray<char> retBuffer{};
         retBuffer.Reserve(len + 1u);
 
-        for (auto i = 0u; i < aParts.size; i++)
+        for (auto i = 0u; i < aParts.Size(); i++)
         {
             for (auto j : aParts[i])
             {
                 retBuffer.PushBack(j);
             }
 
-            if (i < (aParts.size - 1u))
+            if (i < (aParts.Size() - 1u))
             {
                 for (auto j : aDelimiter)
                 {
@@ -58,7 +58,7 @@ public:
 
         retBuffer.PushBack('\0');
 
-        return CString(retBuffer.entries);
+        return CString(retBuffer.Data());
     }
 
     static CString FormatString(const CString& aTemplate, Red::Handle<text::TextParameterSet>& aParams)
@@ -93,8 +93,8 @@ public:
 
         final.PushBack('\0');
 
-        CString ret{final.entries};
-        
+        CString ret{final.Data()};
+
         return ret;
     }
 
