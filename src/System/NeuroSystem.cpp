@@ -209,10 +209,15 @@ struct NeuroQuickhackDataJson
     }
 };
 
-struct NeuroQuickhackResponseJson
+struct NeuroQuickhackTargetDataJson
 {
     uint64_t entityId{};
     std::vector<int> hacks{};
+};
+
+struct NeuroQuickhackResponseJson
+{
+    std::vector<NeuroQuickhackTargetDataJson> targets{};
 };
 
 struct NeuroSMSChoiceEntryJson
@@ -237,7 +242,7 @@ struct NeuroSMSJson
         ret.convoNameIfApplicable = aData->m_convoNameIfApplicable.c_str();
         ret.chatHistory = aData->m_messageHistory.c_str();
 
-        for (auto i = 0u; i < aData->m_responseOptions.size; i++)
+        for (auto i = 0u; i < aData->m_responseOptions.Size(); i++)
         {
             NeuroSMSChoiceEntryJson choice{};
 
@@ -306,7 +311,7 @@ mod::NeuroChoiceContext mod::NeuroChoiceContext::FromGameData(
         {
             if (auto& asBluelinePart = Cast<game::interactions::ChoiceCaptionBluelinePart>(captionPart))
             {
-                if (asBluelinePart->blueline->parts.size == 0u)
+                if (asBluelinePart->blueline->parts.Size() == 0u)
                 {
                     continue;
                 }
@@ -460,9 +465,8 @@ void mod::NeuroActionResponseMessage::DispatchNeuroMessage(neuro::NeuroSocket& a
 
 bool mod::NeuroActionResponseMessage::IsResponseToForcedAction() const
 {
-    // Note: evil hardcode
-    // Evil hardcode has claimed 1 (one) action to date
-    return m_actionName == "select_dialogue_choice" || m_actionName == "select_sms_message_choice";
+    return m_actionName == "select_dialogue_choice" || m_actionName == "select_sms_message_choice" ||
+           m_actionName == "run_quickhack_on_target";
 }
 
 void mod::NeuroContextMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
@@ -672,7 +676,7 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                 }
                 break;
             }
-            case CNAME_HASH("run_quickhack_on_target"):
+            case CNAME_HASH("run_quickhacks"):
             {
                 Impl::JSON::NeuroQuickhackResponseJson json{};
                 // operator bool overload for glz::error_ctx returns true on failure!
@@ -682,46 +686,53 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                     break;
                 }
 
-                if (json.hacks.empty())
+                if (json.targets.empty())
                 {
-                    response->m_actionResponse = "No quickhack IDs provided.";
+                    response->m_actionResponse = "No targets provided.";
                     break;
                 }
 
-                DynArray<int> hackIds{};
+                std::vector<std::string> results{};
 
-                auto invalidIdProvided = false;
-
-                for (auto i : json.hacks)
+                for (const auto& target : json.targets)
                 {
-                    if (i < 0)
+                    DynArray<int> hackIds{};
+
+                    auto invalidIdProvided = false;
+
+                    for (auto i : target.hacks)
                     {
-                        response->m_actionResponse = "Invalid quickhack ID provided.";
-                        invalidIdProvided = true;
-                        break;
+                        if (i < 0)
+                        {
+                            results.push_back(
+                                fmt::format("Invalid quickhack ID {} provided for target {}.", i, target.entityId));
+                            invalidIdProvided = true;
+                            break;
+                        }
+
+                        hackIds.PushBack(i);
                     }
 
-                    hackIds.PushBack(i);
+                    if (invalidIdProvided)
+                    {
+                        continue;
+                    }
+
+                    auto info = MakeHandle<Impl::NeuroQuickhackQueueData>();
+
+                    info->m_currentQuickhackIndex = 0u;
+                    info->m_targetEntityId = target.entityId;
+                    info->m_usedQuickhackIds = std::move(hackIds);
+
+                    if (!AppendToQuickhackQueue(info))
+                    {
+                        results.push_back(
+                            fmt::format("Failed to append hacks for target {} to queue.", target.entityId));
+                        continue;
+                    }
                 }
 
-                if (invalidIdProvided)
-                {
-                    break;
-                }
-
-                auto info = MakeHandle<Impl::NeuroQuickhackQueueData>();
-
-                info->m_currentQuickhackIndex = 0u;
-                info->m_targetEntityId = json.entityId;
-                info->m_usedQuickhackIds = std::move(hackIds);
-
-                if (!AppendToQuickhackQueue(info))
-                {
-                    response->m_actionResponse = "Failed to defer quickhack information.";
-                    break;
-                }
-
-                response->m_actionResponse = "Quickhack information queued.";
+                response->m_actionResponse = fmt::format("{}", fmt::join(results, "\n")).c_str();
 
                 break;
             }
@@ -1002,9 +1013,9 @@ void mod::NeuroSystem::TickInputQueue(FrameInfo& aInfo)
 {
     std::unique_lock lock(m_inputLock);
 
-    if (m_injectedKeyQueueIndex >= m_injectedKeyQueue.size)
+    if (m_injectedKeyQueueIndex >= m_injectedKeyQueue.Size())
     {
-        if (m_injectedKeyQueue.size > 0u)
+        if (m_injectedKeyQueue.Size() > 0u)
         {
             m_injectedKeyQueue.Clear();
             m_injectedKeyQueueIndex = 0u;
@@ -1121,15 +1132,17 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 
 void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
 {
+    auto dt = aInfo.deltaTime;
+
     aJobQueue.Dispatch(
-        [this]()
+        [this, dt]()
         {
             std::unique_lock lock(m_quickhackLock);
             DynArray<Handle<Impl::NeuroQuickhackQueueData>> removed{};
 
             for (auto& i : m_quickhackDataQueue)
             {
-                if (i->m_currentQuickhackIndex >= i->m_usedQuickhackIds.size)
+                if (i->m_currentQuickhackIndex >= i->m_usedQuickhackIds.Size())
                 {
                     // Done with this one
                     removed.PushBack(i);
@@ -1159,6 +1172,32 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
             {
                 m_quickhackDataQueue.Remove(i);
             }
+
+            if (!m_combatQuickhackLoopActive)
+            {
+                m_combatQuickhackLoopTimer = 0.f;
+                return;
+            }
+
+            if (m_combatQuickhackLoopTimer > 0.f)
+            {
+                m_combatQuickhackLoopTimer -= dt;
+                return;
+            }
+
+            m_combatQuickhackLoopTimer = CombatQuickhackLoopDelay;
+
+            // Gathering quickhacks is very heavy so defer it to job outside of game system chain (note: maybe consider parallel job later when Psi gives pasta...)
+            JobQueue().Dispatch(
+                [this]()
+                {
+                    DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+
+                    if (!CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray))
+                    {
+                        return;
+                    }
+                });
         });
 }
 
@@ -1218,7 +1257,7 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 
                         for (const auto& i : quickhackDataArray)
                         {
-                            const auto hackCount = i->m_quickhacks.size;
+                            const auto hackCount = i->m_quickhacks.Size();
 
                             if (hackCount > 0u)
                             {
@@ -1327,7 +1366,7 @@ bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueDa
 {
     std::unique_lock lock(m_quickhackLock);
 
-    if (aData->m_usedQuickhackIds.size == 0u || aData->m_usedQuickhackIds.size > MaximumQuickhackQueueLength)
+    if (aData->m_usedQuickhackIds.Size() == 0u || aData->m_usedQuickhackIds.Size() > MaximumQuickhackQueueLength)
     {
         // Nothing to queue or too much
         return false;
@@ -1338,7 +1377,7 @@ bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueDa
     {
         if (i->m_targetEntityId == aData->m_targetEntityId)
         {
-            auto newSize = aData->m_usedQuickhackIds.size + (i->m_usedQuickhackIds.size - i->m_currentQuickhackIndex);
+            auto newSize = aData->m_usedQuickhackIds.Size() + (i->m_usedQuickhackIds.Size() - i->m_currentQuickhackIndex);
 
             if (newSize > MaximumQuickhackQueueLength)
             {
@@ -1409,7 +1448,7 @@ void mod::NeuroSystem::OnSceneDialogChoiceHubsProvided(game::interactions::vis::
     std::unique_lock lock(m_choicehubLock);
     m_choiceHubDataContext.m_choices.clear();
 
-    if (aRef.choiceHubs.size == 0u)
+    if (aRef.choiceHubs.Size() == 0u)
     {
         // Empty hub...
         if (m_countdownToForcedChoiceSelectionStarted)
@@ -1577,7 +1616,7 @@ void mod::NeuroSystem::RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> a
 void mod::NeuroSystem::UnregisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext)
 {
     std::unique_lock lock(m_callbackLock);
-    for (auto i = 0u; i < m_callbackList.size; i++)
+    for (auto i = 0u; i < m_callbackList.Size(); i++)
     {
         if (m_callbackList[i].instance == aContext.instance)
         {
@@ -1601,8 +1640,8 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
                                    TickFuzzer(aJobQueue);
                                    TickInputQueue(aFrameInfo);
                                    TickSceneInfo(aFrameInfo, aJobQueue);
-                                   TickCommunication(aFrameInfo, aJobQueue);
                                    TickQuickhackQueue(aFrameInfo, aJobQueue);
+                                   TickCommunication(aFrameInfo, aJobQueue);
                                });
 }
 

@@ -47,9 +47,9 @@ public cb func OnAICommandStateEvent(ev: ref<AICommandStateEvent>) {
             neuroSystem.SendContext("Autodrive arrived to destination.");
             break;
         case AICommandState.Failure:
-            this.KillNeurodrive(true);
-            SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveFail");
-            neuroSystem.SendContext("Autodrive failed for unknown reasons.");
+            // this.KillNeurodrive(true);
+            // SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveFail");
+            // neuroSystem.SendContext("Autodrive failed for unknown reasons.");
             break;
         default:
             break;

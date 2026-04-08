@@ -7,9 +7,9 @@
 
 using namespace Red;
 
-RED4EXT_C_EXPORT bool RED4EXT_CALL Main(PluginHandle aHandle, EMainReason aReason, const Sdk* aSdk)
+RED4EXT_C_EXPORT bool RED4EXT_CALL Main(v1::PluginHandle aHandle, v1::EMainReason aReason, const v1::Sdk* aSdk)
 {
-    if (aReason == EMainReason::Load)
+    if (aReason == v1::EMainReason::Load)
     {
         Context::PluginHandle = aHandle;
         Context::PluginSdk = aSdk;
@@ -18,7 +18,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(PluginHandle aHandle, EMainReason aReaso
         // Package whole mod into RED4ext plugin folder
         aSdk->scripts->Add(aHandle, L"Scripts");
 
-        GameState state{};
+        v1::GameState state{};
 
         state.OnEnter = nullptr;
         state.OnUpdate = &mod::NeuroSystem::OnGameStateUpdate;
@@ -33,22 +33,22 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(PluginHandle aHandle, EMainReason aReaso
     return true;
 }
 
-RED4EXT_C_EXPORT void RED4EXT_CALL Query(PluginInfo* aInfo)
+RED4EXT_C_EXPORT void RED4EXT_CALL Query(v1::PluginInfo* aInfo)
 {
     aInfo->name = build::ProjectName;
     aInfo->author = build::AuthorName;
 
     constexpr auto ModVersion = build::GetModVersion();
 
-    aInfo->version =
-        RED4EXT_SEMVER_EX(static_cast<std::uint8_t>(ModVersion.major()), static_cast<std::uint8_t>(ModVersion.minor()),
-                          static_cast<std::uint8_t>(ModVersion.patch()), RED4EXT_V0_SEMVER_PRERELEASE_TYPE_NONE,
-                          0); // Set your version here.
-    aInfo->runtime = RED4EXT_RUNTIME_INDEPENDENT;
-    aInfo->sdk = RED4EXT_SDK_LATEST;
+
+    aInfo->version = RED4EXT_V1_SEMVER(
+        static_cast<std::uint8_t>(ModVersion.major()), static_cast<std::uint8_t>(ModVersion.minor()),
+                          static_cast<std::uint8_t>(ModVersion.patch())); // Set your version here.
+    aInfo->runtime = RED4EXT_V1_RUNTIME_VERSION_INDEPENDENT;
+    aInfo->sdk = RED4EXT_V1_SDK_VERSION_CURRENT;
 }
 
 RED4EXT_C_EXPORT uint32_t RED4EXT_CALL Supports()
 {
-    return RED4EXT_API_VERSION_LATEST;
+    return RED4EXT_API_VERSION_1;
 }

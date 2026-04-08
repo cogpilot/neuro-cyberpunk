@@ -117,16 +117,16 @@ constexpr char JsonSchema[] =
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SelectSMSResponse
 
-namespace RunQuickhackOnTarget
+namespace RunQuickhacks
 {
-constexpr char Name[] = "run_quickhack_on_target";
+constexpr char Name[] = "run_quickhacks";
 constexpr char Desc[] =
-    R"(Run quickhacks on a target. Quickhacks and targets can be queried with query_quickhackable_targets and are also provided once a quickhackable entity is scanned by the player. Note that the entity ID and quickhack IDs must be exact.)";
+    R"(Run quickhacks on targets. Quickhacks and targets can be queried with query_quickhackable_targets and are also provided once a quickhackable entity is scanned by the player. Note that the entity IDs and quickhack IDs must be exact.)";
 constexpr char JsonSchema[] =
-    R"({ "additionalProperties": false, "type": "object", "title": "SelectQuickhack", "properties": { "entityId": { "description": "The entity ID of the quickhack target. This MUST be exact.", "type": "integer" }, "hacks": { "description": "The IDs of the selected quickhack from the provided options. If this is over max queue size, overflowing quickhacks will be dropped.", "type": "array", "items": { "type": "number" }  } }, "required": ["entityId", "hacks"] })";
+    R"({"title":"SelectQuickhacks","type":"object","additionalProperties":false,"properties":{"targets":{"type":"array","description":"The list of quickhack targets to apply hacks to.","items":{"type":"object","additionalProperties":false,"properties":{"entityId":{"type":"integer","description":"The entity ID of the quickhack target. This must match exactly."},"hacks":{"type":"array","description":"The IDs of the selected quickhacks from the provided options. If this exceeds the max queue size for the target, overflowing quickhacks will be dropped.","items":{"type":"integer"}}},"required":["entityId","hacks"]}}},"required":["targets"]})";
 
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
-} // namespace RunQuickhackOnTarget
+} // namespace RunQuickhacks
 
 namespace TrackQuest
 {
@@ -161,7 +161,7 @@ neurosdk_action ActionsList[] = {QueryQuestContext::Action,
                                  DriveToDestination::Action,
                                  SelectChoiceOption::Action,
                                  SelectSMSResponse::Action,
-                                 RunQuickhackOnTarget::Action,
+                                 RunQuickhacks::Action,
                                  TrackQuest::Action,
                                  SummonCar::Action};
 
