@@ -48,6 +48,8 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func SendContextSilent(msg: String) -> Void;
 
+    public native func SetCombatState(inCombat: Bool) -> Void;
+
     public native func TrackMappin(mappin: ref<IMappin>) -> Void;
 
     public native func InjectKeypressChain(data: [EInputKey]) -> Void;

@@ -430,6 +430,13 @@ public:
 
 #pragma region ScriptingUtils
     /**
+     * \brief Set whether or not we're in combat. This is used for quickhack handling, as we want to spam Neuro with
+     * quickhacks when we're doing combat
+     * \param aInCombat Whether or not we are in combat.
+     */
+    void SetCombatState(bool aInCombat);
+
+    /**
      * \brief Track a mappin for Autodrive to work, as MappinSystem does not export a TrackMappin method for generic
      * mappins OOTB and I don't believe this mod should do Codeware work.
      * \param aMappin The mappin to track.

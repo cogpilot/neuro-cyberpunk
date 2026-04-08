@@ -206,6 +206,8 @@ protected cb func OnCombatStateChanged(newState: Int32) -> Bool {
         } else {
             neuroSystem.SendContext("The player has exited combat.");
         }
+
+        neuroSystem.SetCombatState(isInCombat);
     }
 
     wrappedMethod(newState);

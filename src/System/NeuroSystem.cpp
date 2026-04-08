@@ -1197,6 +1197,46 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
                     {
                         return;
                     }
+
+                    if (quickhackDataArray.IsEmpty())
+                    {
+                        return;
+                    }
+
+                    DynArray<CString> data{};
+
+                    for (const auto& i : quickhackDataArray)
+                    {
+                        shared::raw::JSON::Serializer serializer{i};
+
+                        CString out{};
+
+                        if (!serializer.Serialize(out))
+                        {
+                            continue;
+                        }
+
+                        data.PushBack(std::move(out));
+                    }
+
+                    if (data.IsEmpty())
+                    {
+                        return;
+                    }
+
+                    auto delimitedData = util::StringUtils::BuildString(data, "\r\n");
+
+                    auto msg = MakeHandle<NeuroForcedActionMessage>();
+
+                    msg->m_query =
+                        "You are in combat. Here are the current quickhackable targets and their "
+                        "available hacks. This action will repeat every few seconds. The current hackable targets are provided.";
+                    msg->m_actionName = "run_quickhacks";
+                    // No point interrupting Neuro *too* much, high interrupts may result in bad stream
+                    msg->m_priority = "low"; 
+                    msg->m_state = delimitedData;
+
+                    AddMessage(msg);
                 });
         });
 }
@@ -1408,6 +1448,12 @@ bool mod::NeuroSystem::IsPreGame()
 mod::NeuroSystem* mod::NeuroSystem::GetInstance()
 {
     return Instance::Instance;
+}
+
+void mod::NeuroSystem::SetCombatState(bool aInCombat)
+{
+    std::unique_lock lock(m_quickhackLock);
+    m_combatQuickhackLoopActive = aInCombat;
 }
 
 void mod::NeuroSystem::TrackMappin(Handle<game::mappins::IMappin>& aMappin)
@@ -1677,6 +1723,7 @@ void mod::NeuroSystem::OnWorldDetached(world::RuntimeScene* aScene)
 
     std::unique_lock quickhackLock(m_quickhackLock);
     m_quickhackDataQueue.Clear();
+    m_combatQuickhackLoopActive = false;
 }
 
 void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)
@@ -1725,6 +1772,7 @@ RTTI_DEFINE_CLASS(Impl::NeuroQuickhackQueueData, {
 RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(SendContext);
     RTTI_METHOD(SendContextSilent);
+    RTTI_METHOD(SetCombatState);
     RTTI_METHOD(TrackMappin);
     RTTI_METHOD(InjectKeypress);
     RTTI_METHOD(InjectKeypressChain);
