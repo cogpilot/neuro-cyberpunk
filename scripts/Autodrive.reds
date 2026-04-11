@@ -47,8 +47,9 @@ public cb func OnAICommandStateEvent(ev: ref<AICommandStateEvent>) {
             neuroSystem.SendContext("Autodrive arrived to destination.");
             break;
         case AICommandState.Failure:
+            // This happens more than expected - do not kill autodrive!
             // this.KillNeurodrive(true);
-            // SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveFail");
+            SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveFail");
             // neuroSystem.SendContext("Autodrive failed for unknown reasons.");
             break;
         default:
@@ -139,6 +140,7 @@ public cb func OnJournalTrackedUpdate(
 
     this.KillNeurodrive(true);
     this.SetupNeurodrivePointToPoint(aiCommand, false, true);
+    SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveRetarget");
 }
 
 @addMethod(VehicleObject)

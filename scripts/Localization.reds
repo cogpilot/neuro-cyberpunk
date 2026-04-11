@@ -22,8 +22,9 @@ public class NeuroEnglishLocalization extends ModLocalizationPackage {
         this
             .Text(
                 "Neuro-OnAutodriveFail",
-                "NeuroDrive\u{2122} has failed for an unexpected reason. Please contact support."
+                "NeuroDrive\u{2122} has suffered an error. If this continues, contact support."
             );
+        this.Text("Neuro-OnAutodriveRetarget", "NeuroDrive\u{2122} retargeting...");
     }
 }
 

@@ -22,7 +22,7 @@ protected cb func OnQuickhackStarted(value: ref<RevealInteractionWheel>) -> Bool
 
     let neuroSystem = GameInstance.GetNeuroSystem();
 
-    neuroSystem.OnQuickhackDataProvided(desc);
+    neuroSystem.OnQuickhackDataProvided(desc, false);
 }
 
 @addMethod(GameObject)
@@ -107,7 +107,7 @@ public final func GetMaxQuickhackQueueSizeForObject() -> Int32 {
     if IsDefined(asScriptedPuppet) {
         let queueSize = 1;
         if QuickHackableQueueHelper.IsQueuePerkBought(player) {
-            queueSize = FloorF(
+            queueSize += FloorF(
                 GameInstance
                     .GetStatsSystem(GetGameInstance())
                     .GetStatValue(playerStatsObjectId, gamedataStatType.QuickHackQueueSize)
@@ -232,7 +232,7 @@ public final func GetNeuroQuickhackInfo() -> ref<NeuroQuickhackDataDto> {
 public final func GetQuickhackableTargetsForNeuro() -> [ref<NeuroQuickhackDataDto>] {
     let searchQuery: TargetSearchQuery;
 
-    searchQuery.testedSet = TargetingSet.Frustum;
+    searchQuery.testedSet = TargetingSet.Complete;
     searchQuery.includeSecondaryTargets = false;
     searchQuery.filterObjectByDistance = true;
     searchQuery.searchFilter = TSF_Quickhackable();
@@ -301,5 +301,28 @@ public final func GetQuickhackableTargetsForNeuro() -> [ref<NeuroQuickhackDataDt
     }
 
     return neuroTargets;
+}
+
+@wrapMethod(ScriptedPuppet)
+protected cb func OnNetworkLinkQuickhackEvent(evt: ref<NetworkLinkQuickhackEvent>) -> Bool
+{
+    wrappedMethod(evt);
+
+    if Equals(evt.targetID, GetPlayer(GetGameInstance()).GetEntityID()) {
+        let hasCounterhackPerk = GameInstance.GetStatsSystem(GetGameInstance()).GetStatValue(Cast<StatsObjectID>(evt.targetID), gamedataStatType.RevealNetrunnerWhenHacked) > 0.0;
+        if hasCounterhackPerk {
+            let netrunner = GameInstance.FindEntityByID(GetGameInstance(), evt.netrunnerID);
+            if IsDefined(netrunner) {
+                let netrunnerAsGameObject = netrunner as GameObject;
+
+                if IsDefined(netrunnerAsGameObject) {
+                    let hackData = netrunnerAsGameObject.GetNeuroQuickhackInfo();
+                    if IsDefined(hackData) {
+                        GameInstance.GetNeuroSystem().OnQuickhackDataProvided(hackData, true);
+                    }
+                }
+            }
+        }
+    }
 }
 

@@ -195,13 +195,11 @@ struct NeuroQuickhackDataJson
             quickhackJson.desc = quickhack->m_quickhackDesc.c_str();
             quickhackJson.category = quickhack->m_quickhackCategory.c_str();
             quickhackJson.status = quickhack->m_quickhackStatus.c_str();
-
             quickhackJson.ramCost = quickhack->m_quickhackCost;
             quickhackJson.cooldown = quickhack->m_cooldown;
             quickhackJson.uploadTime = quickhack->m_uploadTime;
             quickhackJson.willReveal = quickhack->m_willReveal;
             quickhackJson.canUse = quickhack->m_canUse;
-
             json.quickhacks.push_back(std::move(quickhackJson));
         }
 
@@ -730,6 +728,8 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                             fmt::format("Failed to append hacks for target {} to queue.", target.entityId));
                         continue;
                     }
+
+                    results.push_back(fmt::format("Added hacks for target {} to queue.", target.entityId));
                 }
 
                 response->m_actionResponse = fmt::format("{}", fmt::join(results, "\n")).c_str();
@@ -800,10 +800,21 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                             return;
                         }
 
+                        if (quickhackDataArray.IsEmpty())
+                        {
+                            response->m_actionResponse = "No quickhackable targets found.";
+                            AddMessage(response);
+                            return;
+                        }
+
+                        // Unused due to difficulty of understanding by Neuro + crashiness with structs
+                        /*
                         DynArray<CString> data{};
 
-                        // This might actually be slower than Glaze cuz REDengine (rapidjson?) impl might be less optimized
-                        for (const auto& i : quickhackDataArray)
+                        // This might actually be slower than Glaze cuz REDengine (rapidjson?) impl might be less
+                        // optimized
+                        // Also `ExportTable` is a mess when using refs and using structs for quickhack data crashes due
+                        to vtbl layout :D for (const auto& i : quickhackDataArray)
                         {
                             shared::raw::JSON::Serializer serializer{i};
 
@@ -820,6 +831,31 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
                         }
 
                         response->m_actionResponse = util::StringUtils::BuildString(data, "\r\n");
+                        */
+
+                        std::vector<std::string> jsonParts{};
+
+                        for (const auto& i : quickhackDataArray)
+                        {
+                            const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(i);
+                            auto jsonResult = glz::write_json(jsonData);
+
+                            if (!jsonResult)
+                            {
+                                continue;
+                            }
+
+                            jsonParts.push_back(jsonResult.value());
+                        }
+
+                        if (!jsonParts.empty())
+                        {
+                            response->m_actionResponse = fmt::format("{}", fmt::join(jsonParts, "\r\n")).c_str();
+                        }
+                        else
+                        {
+                            response->m_actionResponse = "Failed to serialize quickhack data to JSON.";
+                        }
 
                         AddMessage(response);
                         Context::Spew("Deferred action '{}' handled in {} ms", response->m_actionName.c_str(),
@@ -1134,110 +1170,115 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
 {
     auto dt = aInfo.deltaTime;
 
-    aJobQueue.Dispatch(
-        [this, dt]()
+    std::unique_lock lock(m_quickhackLock);
+
+    DynArray<Handle<Impl::NeuroQuickhackQueueData>> removed{};
+
+    for (auto& i : m_quickhackDataQueue)
+    {
+        if (i->m_currentQuickhackIndex >= i->m_usedQuickhackIds.Size())
         {
-            std::unique_lock lock(m_quickhackLock);
-            DynArray<Handle<Impl::NeuroQuickhackQueueData>> removed{};
+            // Done with this one
+            removed.PushBack(i);
+            continue;
+        }
 
-            for (auto& i : m_quickhackDataQueue)
+        const auto currId = i->m_usedQuickhackIds[i->m_currentQuickhackIndex];
+
+        auto status = false;
+
+        if (!CallVirtual(this, "QuickhackTargetInternal", status, i->m_targetEntityId, currId))
+        {
+            removed.PushBack(i);
+            break;
+        }
+
+        if (!status)
+        {
+            removed.PushBack(i);
+            break;
+        }
+
+        i->m_currentQuickhackIndex++;
+
+        // Maybe one quickhack per tick to not overload the game? Seems to have weird crashes if full load
+        break;
+    }
+
+    for (const auto& i : removed)
+    {
+        m_quickhackDataQueue.Remove(i);
+    }
+
+    auto fuzzerActive = false;
+
+    {
+        std::unique_lock fuzzerLock(m_fuzzerLock);
+        fuzzerActive = m_fuzzerActive;
+    }
+
+    if (!m_combatQuickhackLoopActive && !fuzzerActive)
+    {
+        m_combatQuickhackLoopTimer = 0.f;
+        return;
+    }
+
+    if (m_combatQuickhackLoopTimer > 0.f)
+    {
+        m_combatQuickhackLoopTimer -= dt;
+        return;
+    }
+
+    m_combatQuickhackLoopTimer = CombatQuickhackLoopDelay;
+
+    // Gathering quickhacks is very heavy so defer it to job outside of game system chain (note: maybe consider
+    // parallel job later when Psi gives pasta...)
+    JobQueue().Dispatch(
+        [this]()
+        {
+            DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+
+            if (!CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray))
             {
-                if (i->m_currentQuickhackIndex >= i->m_usedQuickhackIds.Size())
-                {
-                    // Done with this one
-                    removed.PushBack(i);
-                    continue;
-                }
-
-                const auto currId = i->m_usedQuickhackIds[i->m_currentQuickhackIndex];
-
-                auto status = false;
-
-                if (!CallVirtual(this, "QuickhackTargetInternal", status, i->m_targetEntityId, currId))
-                {
-                    removed.PushBack(i);
-                    continue;
-                }
-
-                if (!status)
-                {
-                    removed.PushBack(i);
-                    continue;
-                }
-
-                i->m_currentQuickhackIndex++;
-            }
-
-            for (const auto& i : removed)
-            {
-                m_quickhackDataQueue.Remove(i);
-            }
-
-            if (!m_combatQuickhackLoopActive)
-            {
-                m_combatQuickhackLoopTimer = 0.f;
                 return;
             }
 
-            if (m_combatQuickhackLoopTimer > 0.f)
+            if (quickhackDataArray.IsEmpty())
             {
-                m_combatQuickhackLoopTimer -= dt;
                 return;
             }
 
-            m_combatQuickhackLoopTimer = CombatQuickhackLoopDelay;
+            std::vector<std::string> jsonParts{};
 
-            // Gathering quickhacks is very heavy so defer it to job outside of game system chain (note: maybe consider parallel job later when Psi gives pasta...)
-            JobQueue().Dispatch(
-                [this]()
+            for (const auto& i : quickhackDataArray)
+            {
+                const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(i);
+                auto jsonResult = glz::write_json(jsonData);
+
+                if (!jsonResult)
                 {
-                    DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+                    continue;
+                }
 
-                    if (!CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray))
-                    {
-                        return;
-                    }
+                jsonParts.push_back(jsonResult.value());
+            }
 
-                    if (quickhackDataArray.IsEmpty())
-                    {
-                        return;
-                    }
+            if (jsonParts.empty())
+            {
+                return;
+            }
 
-                    DynArray<CString> data{};
+            auto msg = MakeHandle<NeuroForcedActionMessage>();
 
-                    for (const auto& i : quickhackDataArray)
-                    {
-                        shared::raw::JSON::Serializer serializer{i};
+            msg->m_query = "You are in combat. Here are the current quickhackable targets and their "
+                           "available hacks. Run as many as possible. Prefer lethal hacks over non-lethal ones. This "
+                           "action will repeat every few seconds. The current hackable targets are provided.";
+            msg->m_actionName = "run_quickhacks";
+            // No point interrupting Neuro *too* much, high interrupts may result in bad stream
+            msg->m_priority = "low";
+            msg->m_state = fmt::format("{}", fmt::join(jsonParts, "\r\n")).c_str();
 
-                        CString out{};
-
-                        if (!serializer.Serialize(out))
-                        {
-                            continue;
-                        }
-
-                        data.PushBack(std::move(out));
-                    }
-
-                    if (data.IsEmpty())
-                    {
-                        return;
-                    }
-
-                    auto delimitedData = util::StringUtils::BuildString(data, "\r\n");
-
-                    auto msg = MakeHandle<NeuroForcedActionMessage>();
-
-                    msg->m_query =
-                        "You are in combat. Here are the current quickhackable targets and their "
-                        "available hacks. This action will repeat every few seconds. The current hackable targets are provided.";
-                    msg->m_actionName = "run_quickhacks";
-                    // No point interrupting Neuro *too* much, high interrupts may result in bad stream
-                    msg->m_priority = "low"; 
-                    msg->m_state = delimitedData;
-
-                    AddMessage(msg);
-                });
+            AddMessage(msg);
         });
 }
 
@@ -1417,7 +1458,8 @@ bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueDa
     {
         if (i->m_targetEntityId == aData->m_targetEntityId)
         {
-            auto newSize = aData->m_usedQuickhackIds.Size() + (i->m_usedQuickhackIds.Size() - i->m_currentQuickhackIndex);
+            auto newSize =
+                aData->m_usedQuickhackIds.Size() + (i->m_usedQuickhackIds.Size() - i->m_currentQuickhackIndex);
 
             if (newSize > MaximumQuickhackQueueLength)
             {
@@ -1592,24 +1634,36 @@ bool mod::NeuroSystem::HasForcedActionCooldown()
     return m_hasSentForcedActionMessage;
 }
 
-void mod::NeuroSystem::OnQuickhackDataProvided(Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo)
+void mod::NeuroSystem::OnQuickhackDataProvided(Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo, bool aIsCounterHack)
 {
-    shared::raw::JSON::Serializer serializer{aQuickhackInfo};
-
-    DynArray<CString> builder{
+    constexpr const char* InitFromScan =
         "You are scanning an entity. The entity's information is specified in the following data. You can use "
-        "the mentioned quickhacks using the run_quickhack_on_target action. If you want more enemies to quickhack, use "
-        "the query_quickhackable_targets action. Data:",
-        ""};
+        "the mentioned quickhacks using the run_quickhacks action. If you want more enemies to quickhack, "
+        "use "
+        "the query_quickhackable_targets action. Data:\r\n";
 
-    if (!serializer.Serialize(builder[1]))
+    constexpr const char* InitFromCounterhack =
+        "THIS ENEMY IS QUICKHACKING YOU. The enemy's information is specified in the following data. You can "
+        "use the mentioned quickhacks using the run_quickhacks action to counterhack them. If you want more "
+        "enemies to quickhack, use the query_quickhackable_targets action. Data:\r\n";
+
+    std::vector<std::string> builder{
+        aIsCounterHack ? InitFromCounterhack : InitFromScan,
+    };
+
+    const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(aQuickhackInfo);
+    auto jsonResult = glz::write_json(jsonData);
+
+    if (!jsonResult)
     {
         return;
     }
 
-    auto str = util::StringUtils::BuildString(builder, "\r\n");
+    builder.push_back(jsonResult.value());
 
-    SendContext(str);
+    auto str = fmt::format("{}", fmt::join(builder, "\r\n"));
+
+    SendContext(str.c_str());
 }
 
 void mod::NeuroSystem::OnSMSMessageDataProvided(Handle<Impl::NeuroPhoneMessageDto>& aMessageInfo)
@@ -1625,14 +1679,14 @@ void mod::NeuroSystem::OnSMSMessageDataProvided(Handle<Impl::NeuroPhoneMessageDt
 
     msg->m_query = "You have options to reply to a phone message. The choices are provided in the action context. If "
                    "you do not wish to reply to the message, pass -1 as the message ID.";
-    
+
     shared::raw::JSON::Serializer serializer{aMessageInfo};
 
     if (!serializer.Serialize(msg->m_state))
     {
         return;
     }
-   
+
     msg->m_actionName = "select_sms_message_choice";
 
     AddMessage(msg);

@@ -56,7 +56,7 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func HasForcedActionCooldown() -> Bool;
 
-    public native func OnQuickhackDataProvided(data: ref<NeuroQuickhackDataDto>);
+    public native func OnQuickhackDataProvided(data: ref<NeuroQuickhackDataDto>, isCounterHack: Bool);
 
     public native func OnSMSMessageDataProvided(data: ref<NeuroPhoneMessageDto>);
 

@@ -176,7 +176,7 @@ public:
     static constexpr auto MaximumQuickhackQueueLength = 4u;
 
     // Delay for sending quickhack force actions to Neuro
-    static constexpr auto CombatQuickhackLoopDelay = 10.f;
+    static constexpr auto CombatQuickhackLoopDelay = 2.5f;
 
     // Lock to access Neuro socket
     Red::SharedSpinLock m_socketLock{};
@@ -243,6 +243,9 @@ public:
     // This should allow for queue quickhacks and multitarget
     Red::SharedSpinLock m_quickhackLock{};
     Red::DynArray<Red::Handle<Impl::NeuroQuickhackQueueData>> m_quickhackDataQueue{};
+
+    // How long before we go through quickhack queue again?
+    float m_timeUntilNextQuickhackApply{};
 
     // Are we in combat and thus should spam Neuro with quickhack targets every N seconds?
     bool m_combatQuickhackLoopActive{};
@@ -459,8 +462,9 @@ public:
     /**
      * \brief Dispatch new quickhack info to Neuro.
      * \param aQuickhackInfo The available quickhack information gathered by script.
+     * \param aIsCounterHack Whether or not the target is actively hacking us. Set when we send this from us being hacked.
      */
-    void OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo);
+    void OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo, bool aIsCounterHack);
 
     /**
      * \brief Dispatch new phone message info to Neuro.
