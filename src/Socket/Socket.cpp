@@ -149,6 +149,24 @@ constexpr char JsonSchema[] = "{}";
 constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
 } // namespace SummonCar
 
+namespace GetContactsList
+{
+constexpr char Name[] = "get_contacts_list";
+constexpr char Desc[] =
+    "Get the list of callable contacts.";
+constexpr char JsonSchema[] = "{}";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace GetContactsList
+
+namespace CallContact
+{
+constexpr char Name[] = "call_contact";
+constexpr char Desc[] = "Call a contact. This may not be possible depending on quest state.";
+constexpr char JsonSchema[] = R"({ "additionalProperties": false, "type": "object", "properties": { "name": { "description": "The name of the contact to call. The name has to match exactly.", "type": "string" } }, "required": ["name"] })";
+
+constexpr neurosdk_action Action = {.name = Name, .description = Desc, .json_schema = JsonSchema};
+} // namespace CallContact
 #pragma endregion
 
 neurosdk_action ActionsList[] = {QueryQuestContext::Action,
@@ -163,7 +181,9 @@ neurosdk_action ActionsList[] = {QueryQuestContext::Action,
                                  SelectSMSResponse::Action,
                                  RunQuickhacks::Action,
                                  TrackQuest::Action,
-                                 SummonCar::Action};
+                                 SummonCar::Action,
+                                 GetContactsList::Action,
+                                 CallContact::Action};
 
 constexpr auto ActionsCount = ARRAYSIZE(ActionsList);
 

@@ -173,7 +173,7 @@ struct NeuroQuickhackDataJson
 
     std::vector<NeuroQuickhackJson> quickhacks{};
 
-    static NeuroQuickhackDataJson FromGame(const Handle<NeuroQuickhackDataDto>& aData)
+    static NeuroQuickhackDataJson FromGame(const Handle<NeuroQuickhackDataDto>& aData, bool aTrimDescription = false)
     {
         NeuroQuickhackDataJson json{};
 
@@ -192,7 +192,10 @@ struct NeuroQuickhackDataJson
 
             quickhackJson.id = quickhack->m_id;
             quickhackJson.name = quickhack->m_quickhackName.c_str();
-            quickhackJson.desc = quickhack->m_quickhackDesc.c_str();
+            if (!aTrimDescription)
+            {
+                quickhackJson.desc = quickhack->m_quickhackDesc.c_str();
+            }
             quickhackJson.category = quickhack->m_quickhackCategory.c_str();
             quickhackJson.status = quickhack->m_quickhackStatus.c_str();
             quickhackJson.ramCost = quickhack->m_quickhackCost;
@@ -464,7 +467,7 @@ void mod::NeuroActionResponseMessage::DispatchNeuroMessage(neuro::NeuroSocket& a
 bool mod::NeuroActionResponseMessage::IsResponseToForcedAction() const
 {
     return m_actionName == "select_dialogue_choice" || m_actionName == "select_sms_message_choice" ||
-           m_actionName == "run_quickhack_on_target";
+           m_actionName == "run_quickhacks";
 }
 
 void mod::NeuroContextMessage::DispatchNeuroMessage(neuro::NeuroSocket& aSocket)
@@ -784,86 +787,72 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             }
             case CNAME_HASH("query_quickhackable_targets"):
             {
-                // Note: this call is deferred to a separate job queue because this WILL take a while (~150-200ms)
-                // Hopefully the user doesn't exit the game lol
-                JobQueue().Dispatch(
-                    [this, response]()
+                // Quickhacks are now cached
+                DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackCache{};
+
+                GetQuickhackInfoCache(quickhackCache);
+
+                if (quickhackCache.IsEmpty())
+                {
+                    response->m_actionResponse = "No quickhackable targets found.";
+                    break;
+                }
+
+                std::vector<std::string> jsonParts{};
+
+                for (const auto& i : quickhackCache)
+                {
+                    const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(i);
+                    auto jsonResult = glz::write_json(jsonData);
+
+                    if (!jsonResult)
                     {
-                        util::Timestamp startTime{};
+                        continue;
+                    }
 
-                        DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+                    jsonParts.push_back(jsonResult.value());
+                }
 
-                        if (!CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray))
-                        {
-                            response->m_actionResponse = "Failed to call responder method.";
-                            AddMessage(response);
-                            return;
-                        }
-
-                        if (quickhackDataArray.IsEmpty())
-                        {
-                            response->m_actionResponse = "No quickhackable targets found.";
-                            AddMessage(response);
-                            return;
-                        }
-
-                        // Unused due to difficulty of understanding by Neuro + crashiness with structs
-                        /*
-                        DynArray<CString> data{};
-
-                        // This might actually be slower than Glaze cuz REDengine (rapidjson?) impl might be less
-                        // optimized
-                        // Also `ExportTable` is a mess when using refs and using structs for quickhack data crashes due
-                        to vtbl layout :D for (const auto& i : quickhackDataArray)
-                        {
-                            shared::raw::JSON::Serializer serializer{i};
-
-                            CString out{};
-
-                            if (!serializer.Serialize(out))
-                            {
-                                response->m_actionResponse = "Failed to serialize quickhack data to JSON.";
-                                AddMessage(response);
-                                return;
-                            }
-
-                            data.PushBack(std::move(out));
-                        }
-
-                        response->m_actionResponse = util::StringUtils::BuildString(data, "\r\n");
-                        */
-
-                        std::vector<std::string> jsonParts{};
-
-                        for (const auto& i : quickhackDataArray)
-                        {
-                            const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(i);
-                            auto jsonResult = glz::write_json(jsonData);
-
-                            if (!jsonResult)
-                            {
-                                continue;
-                            }
-
-                            jsonParts.push_back(jsonResult.value());
-                        }
-
-                        if (!jsonParts.empty())
-                        {
-                            response->m_actionResponse = fmt::format("{}", fmt::join(jsonParts, "\r\n")).c_str();
-                        }
-                        else
-                        {
-                            response->m_actionResponse = "Failed to serialize quickhack data to JSON.";
-                        }
-
-                        AddMessage(response);
-                        Context::Spew("Deferred action '{}' handled in {} ms", response->m_actionName.c_str(),
-                                      startTime.TimePassedMs().count());
-                    });
-
-                // Bail early, the message will not be sent until the deferred job is done
-                return;
+                if (!jsonParts.empty())
+                {
+                    response->m_actionResponse = fmt::format("{}", fmt::join(jsonParts, "\r\n")).c_str();
+                }
+                else
+                {
+                    response->m_actionResponse = "Failed to serialize quickhack data to JSON.";
+                }
+                break;
+            }
+            case CNAME_HASH("get_contacts_list"):
+            {
+                if (!CallVirtual(this, "OnGetContactsList", response->m_actionResponse))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                    break;
+                }
+                break;
+            }
+            case CNAME_HASH("call_contact"):
+            {
+                // Can use same definition, w/e, same field name anyway :P
+                Impl::JSON::NeuroTrackQuestJson json{};
+                // operator bool overload for glz::error_ctx returns true on failure!
+                if (glz::read_json(json, response->m_actionData.c_str()))
+                {
+                    response->m_actionResponse = "Failed to parse action data JSON.";
+                    break;
+                }
+                if (json.name.empty())
+                {
+                    response->m_actionResponse = "No contact name provided.";
+                    break;
+                }
+                CString contactName{json.name.c_str()};
+                if (!CallVirtual(this, "OnCallContact", response->m_actionResponse, contactName))
+                {
+                    response->m_actionResponse = "Failed to call responder method.";
+                }
+                break;
             }
             default:
             {
@@ -1209,13 +1198,19 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
     {
         m_quickhackDataQueue.Remove(i);
     }
+}
 
+void mod::NeuroSystem::TickCombatLoop(FrameInfo& aInfo)
+{
     auto fuzzerActive = false;
 
     {
+        // This can deadlock if m_quickhackLock is held
         std::unique_lock fuzzerLock(m_fuzzerLock);
         fuzzerActive = m_fuzzerActive;
     }
+
+    std::unique_lock lock(m_quickhackLock);
 
     if (!m_combatQuickhackLoopActive && !fuzzerActive)
     {
@@ -1225,60 +1220,77 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
 
     if (m_combatQuickhackLoopTimer > 0.f)
     {
-        m_combatQuickhackLoopTimer -= dt;
+        m_combatQuickhackLoopTimer -= aInfo.deltaTime;
         return;
     }
 
     m_combatQuickhackLoopTimer = CombatQuickhackLoopDelay;
 
-    // Gathering quickhacks is very heavy so defer it to job outside of game system chain (note: maybe consider
-    // parallel job later when Psi gives pasta...)
+    DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+
+    GetQuickhackInfoCache(quickhackDataArray);
+
+    std::vector<std::string> jsonParts{
+        "You are in combat. Here are the current quickhackable targets and their "
+        "available hacks. Run as many as possible using the run_quickhacks action. Prefer lethal hacks over non-lethal "
+        "ones. This "
+        "action will repeat every few seconds. The current hackable targets are: ."
+    };
+
+    for (const auto& i : quickhackDataArray)
+    {
+        // aTrimDescription to spam context window less
+        const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(i, true);
+        auto jsonResult = glz::write_json(jsonData);
+
+        if (!jsonResult)
+        {
+            continue;
+        }
+
+        jsonParts.push_back(jsonResult.value());
+    }
+
+    if (jsonParts.empty())
+    {
+        return;
+    }
+
+
+    // Prefer this over forced action I think
+    SendContextSilent(fmt::format("{}", fmt::join(jsonParts, "\r\n")).c_str());
+}
+
+void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo)
+{
+    std::unique_lock lock(m_quickhackCacheLock);
+
+    if (m_quickhackCacheUpdateInProgress)
+    {
+        return;
+    }
+
+    m_timeUntilNextQuickhackCacheUpdate -= aFrameInfo.deltaTime;
+
+    if (m_timeUntilNextQuickhackCacheUpdate > 0.f)
+    {
+        return;
+    }
+
+    m_quickhackCacheUpdateInProgress = true;
+
     JobQueue().Dispatch(
         [this]()
         {
             DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
-
-            if (!CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray))
-            {
-                return;
-            }
-
-            if (quickhackDataArray.IsEmpty())
-            {
-                return;
-            }
-
-            std::vector<std::string> jsonParts{};
-
-            for (const auto& i : quickhackDataArray)
-            {
-                const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(i);
-                auto jsonResult = glz::write_json(jsonData);
-
-                if (!jsonResult)
-                {
-                    continue;
-                }
-
-                jsonParts.push_back(jsonResult.value());
-            }
-
-            if (jsonParts.empty())
-            {
-                return;
-            }
-
-            auto msg = MakeHandle<NeuroForcedActionMessage>();
-
-            msg->m_query = "You are in combat. Here are the current quickhackable targets and their "
-                           "available hacks. Run as many as possible. Prefer lethal hacks over non-lethal ones. This "
-                           "action will repeat every few seconds. The current hackable targets are provided.";
-            msg->m_actionName = "run_quickhacks";
-            // No point interrupting Neuro *too* much, high interrupts may result in bad stream
-            msg->m_priority = "low";
-            msg->m_state = fmt::format("{}", fmt::join(jsonParts, "\r\n")).c_str();
-
-            AddMessage(msg);
+            // Return type is irrelevant here
+            CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray);
+            
+            std::unique_lock lock(m_quickhackCacheLock);
+            m_quickhackDataCache = std::move(quickhackDataArray);
+            m_timeUntilNextQuickhackCacheUpdate = QuickhackCacheUpdateDelay;
+            m_quickhackCacheUpdateInProgress = false;
+            m_quickhackIsFirstCacheUse = true;
         });
 }
 
@@ -1315,51 +1327,32 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
             }
             else if (currentActionName == CNAME_HASH("OnQueryQuickhackTargets"))
             {
-                std::unique_lock quickhackLock(m_fuzzerQuickhackLock);
-                if (!m_fuzzerQuickhackCanBeCalled)
+                DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+
+                if (GetQuickhackInfoCache(quickhackDataArray))
                 {
-                    // Skip this call this time
-                    m_currentFuzzerFunction = (m_currentFuzzerFunction + 1) % SizeOfTestedActionNames;
-                    return;
-                }
-
-                m_fuzzerQuickhackCanBeCalled = false;
-
-                JobQueue().Dispatch(
-                    [this, currentActionName, fuzzerFunc = m_currentFuzzerFunction]()
+                    // Only bother updating on first cache hit (OK this is a little silly cuz we can race with other things but w/e)
+                    for (const auto& i : quickhackDataArray)
                     {
-                        // Note: this impl also calls script handler, very cool...
-                        DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
-                        if (!CallVirtual(this, currentActionName, quickhackDataArray))
-                        {
-                            Context::Spew("[Fuzzer] Failed to call deferred func {}!",
-                                          NoParameterActionNames[fuzzerFunc]);
-                        }
+                        const auto hackCount = i->m_quickhacks.Size();
 
-                        for (const auto& i : quickhackDataArray)
+                        if (hackCount > 0u)
                         {
-                            const auto hackCount = i->m_quickhacks.Size();
+                            auto data = MakeHandle<Impl::NeuroQuickhackQueueData>();
 
-                            if (hackCount > 0u)
+                            data->m_targetEntityId = i->m_targetEntityId;
+
+                            for (auto j = 0; j < i->m_maxQueueSize; j++)
                             {
-                                auto data = MakeHandle<Impl::NeuroQuickhackQueueData>();
+                                auto idx = (uint32_t)(__rdtsc()) % hackCount;
 
-                                data->m_targetEntityId = i->m_targetEntityId;
-
-                                for (auto j = 0; j < i->m_maxQueueSize; j++)
-                                {
-                                    auto idx = (uint32_t)(__rdtsc()) % hackCount;
-
-                                    data->m_usedQuickhackIds.PushBack(i->m_quickhacks[idx]->m_id);
-                                }
-
-                                AppendToQuickhackQueue(data);
+                                data->m_usedQuickhackIds.PushBack(i->m_quickhacks[idx]->m_id);
                             }
-                        }
 
-                        std::unique_lock quickhackLock(m_fuzzerQuickhackLock);
-                        m_fuzzerQuickhackCanBeCalled = true;
-                    });
+                            AppendToQuickhackQueue(data);
+                        }
+                    }
+                }
             }
             else if (!CallVirtual(this, currentActionName, returnValue))
             {
@@ -1479,6 +1472,17 @@ bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueDa
     m_quickhackDataQueue.PushBack(aData);
 
     return true;
+}
+
+bool mod::NeuroSystem::GetQuickhackInfoCache(DynArray<Handle<Impl::NeuroQuickhackDataDto>>& aQuickhackCache)
+{
+    std::unique_lock lock(m_quickhackCacheLock);
+    const auto first = m_quickhackIsFirstCacheUse;
+    m_quickhackIsFirstCacheUse = false;
+
+    aQuickhackCache = m_quickhackDataCache;
+    
+    return first;
 }
 
 bool mod::NeuroSystem::IsPreGame()
@@ -1651,7 +1655,7 @@ void mod::NeuroSystem::OnQuickhackDataProvided(Handle<Impl::NeuroQuickhackDataDt
         aIsCounterHack ? InitFromCounterhack : InitFromScan,
     };
 
-    const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(aQuickhackInfo);
+    const auto jsonData = Impl::JSON::NeuroQuickhackDataJson::FromGame(aQuickhackInfo, true);
     auto jsonResult = glz::write_json(jsonData);
 
     if (!jsonResult)
@@ -1740,6 +1744,8 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
                                    TickFuzzer(aJobQueue);
                                    TickInputQueue(aFrameInfo);
                                    TickSceneInfo(aFrameInfo, aJobQueue);
+                                   TickQuickhackCache(aFrameInfo);
+                                   TickCombatLoop(aFrameInfo);
                                    TickQuickhackQueue(aFrameInfo, aJobQueue);
                                    TickCommunication(aFrameInfo, aJobQueue);
                                });
@@ -1754,9 +1760,6 @@ std::uint32_t mod::NeuroSystem::OnBeforeGameSave(const JobGroup& aJobGroup, void
 
 void mod::NeuroSystem::OnGamePrepared()
 {
-    std::unique_lock lock(m_fuzzerQuickhackLock);
-    m_fuzzerQuickhackCanBeCalled = true;
-
     SendContextDirect("The game world is being loaded. Either a save has been loaded or a new game was started.");
 }
 
@@ -1778,6 +1781,10 @@ void mod::NeuroSystem::OnWorldDetached(world::RuntimeScene* aScene)
     std::unique_lock quickhackLock(m_quickhackLock);
     m_quickhackDataQueue.Clear();
     m_combatQuickhackLoopActive = false;
+
+    // Technically a bit broken but doesn't matter here...
+    std::unique_lock cacheLock(m_quickhackCacheLock);
+    m_quickhackDataCache.Clear();
 }
 
 void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)

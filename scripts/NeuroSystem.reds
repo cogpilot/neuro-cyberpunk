@@ -532,6 +532,25 @@ public native class NeuroSystem extends IGameSystem {
         return player.GetQuickhackableTargetsForNeuro();
     }
 
+    public cb func OnGetContactsList() -> String {
+        let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+        let humanContactList = journalManager.GetContactList();
+
+        return StringUtils.BuildString(humanContactList, "\r\n");
+    }
+
+    public cb func OnCallContact(contactName: String) -> String {
+        let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+
+        let returnValue = journalManager.CallContactByName(contactName);
+
+        if returnValue {
+            return "Contact called successfully.";
+        } else {
+            return "Failed to call contact.";
+        }
+    }
+
     public func TranslateItemIdToNeuroDesc(owner: ref<PlayerPuppet>, id: ItemID) -> String {
         let transactionSystem = GameInstance.GetTransactionSystem(GetGameInstance());
 

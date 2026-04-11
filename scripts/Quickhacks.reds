@@ -278,7 +278,7 @@ public final func GetQuickhackableTargetsForNeuro() -> [ref<NeuroQuickhackDataDt
 
     let max = ArraySize(hackables);
 
-    let MAX_QUICKHACKABLES_FOR_NEURO_GATHER = 20;
+    let MAX_QUICKHACKABLES_FOR_NEURO_GATHER = 12;
     if max > MAX_QUICKHACKABLES_FOR_NEURO_GATHER {
         max = MAX_QUICKHACKABLES_FOR_NEURO_GATHER;
     }

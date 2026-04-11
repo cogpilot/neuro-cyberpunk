@@ -1,6 +1,67 @@
 module Neuro
 
 @addMethod(JournalManager)
+public final func CallContactByName(contactName: String) -> Bool {
+    let phoneSystem = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"PhoneSystem") as PhoneSystem;
+
+    if !IsDefined(phoneSystem) {
+        return false;
+    }
+
+    if !phoneSystem.IsCallingEnabled() {
+        return false;
+    }
+
+    let context: JournalRequestContext;
+    context.stateFilter.active = true;
+    context.stateFilter.inactive = true;
+
+    let contacts: array<wref<JournalEntry>>;
+    this.GetContacts(context, contacts);
+
+    for contactEntryRaw in contacts {
+        let contactEntry = contactEntryRaw as JournalContact;
+        if IsDefined(contactEntry) && contactEntry.IsKnown(this) && contactEntry.IsCallable(this) {
+            let localizedName = GetLocalizedText(contactEntry.GetLocalizedName(this));
+
+            // Match against the displayed English contact name, ignoring case.
+            if IsStringValid(localizedName) && StrCmp(localizedName, contactName, -1, true) == 0 {
+                let callRequest = new questTriggerCallRequest();
+                callRequest.addressee = StringToName(contactEntry.GetId());
+                callRequest.caller = n"Player";
+                callRequest.callPhase = questPhoneCallPhase.IncomingCall;
+                callRequest.callMode = questPhoneCallMode.Video;
+                phoneSystem.QueueRequest(callRequest);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+@addMethod(JournalManager)
+public final func GetContactList() -> [String] {
+    let context: JournalRequestContext;
+    context.stateFilter.active = true;
+    context.stateFilter.inactive = true;
+
+    let contacts: [wref<JournalEntry>];
+    this.GetContacts(context, contacts);
+    let contactNames: [String];
+    for contactRaw in contacts {
+        let contact = contactRaw as JournalContact;
+
+        if IsDefined(contact) {
+            let localizedName = GetLocalizedText(contact.GetLocalizedName(this));
+            if IsStringValid(localizedName) {
+                ArrayPush(contactNames, localizedName);
+            }
+        }
+    }
+    return contactNames;
+}
+
+@addMethod(JournalManager)
 public final func TrackQuestByName(questName: String) -> String {
     // Track quest by localized name
     let ctx: JournalRequestContext;

@@ -176,7 +176,10 @@ public:
     static constexpr auto MaximumQuickhackQueueLength = 4u;
 
     // Delay for sending quickhack force actions to Neuro
-    static constexpr auto CombatQuickhackLoopDelay = 2.5f;
+    static constexpr auto CombatQuickhackLoopDelay = 5.f;
+
+    // Delay between quickhack cache updates
+    static constexpr auto QuickhackCacheUpdateDelay = 0.5f;
 
     // Lock to access Neuro socket
     Red::SharedSpinLock m_socketLock{};
@@ -252,6 +255,14 @@ public:
 
     // When should we send the next update to Neuro in combat quickhack loop?
     float m_combatQuickhackLoopTimer{};
+
+    Red::SharedSpinLock m_quickhackCacheLock{};
+
+    float m_timeUntilNextQuickhackCacheUpdate{};
+    bool m_quickhackCacheUpdateInProgress{};
+    bool m_quickhackIsFirstCacheUse{};
+
+    Red::DynArray<Red::Handle<Impl::NeuroQuickhackDataDto>> m_quickhackDataCache{};
 #pragma endregion
 
 #pragma region SMSMessageHandling
@@ -265,9 +276,6 @@ public:
     bool m_fuzzerActive{};
     int m_currentFuzzerFunction{};
     std::uint64_t m_fuzzerCalls{};
-
-    Red::SharedSpinLock m_fuzzerQuickhackLock{};
-    bool m_fuzzerQuickhackCanBeCalled{};
 #pragma endregion
 
 #pragma region Callbacks
@@ -333,6 +341,21 @@ public:
      * \param aJobQueue The job queue provided by the update registrar.
      */
     void TickQuickhackQueue(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
+
+    /**
+     * \brief Tick function registered by the update registrar to update the quickhack cache.
+     * 
+     * \param aFrameInfo The frame's information.
+     * \param aJobQueue The job queue provided by the update registrar.
+     */
+    void TickQuickhackCache(Red::FrameInfo& aFrameInfo);
+
+    /**
+     * \brief Tick function registered by the update registrar to update the combat quickhack timer.
+     * 
+     * \param aFrameInfo The frame's information.
+     */
+    void TickCombatLoop(Red::FrameInfo& aFrameInfo);
 
     /**
      * \brief Tick function registered by update registrar to spam functions to stress test responses for races/whatnot.
@@ -407,6 +430,13 @@ public:
      * \return Whether or not appending the quickhack information succeeded.
      */
     bool AppendToQuickhackQueue(Red::Handle<Impl::NeuroQuickhackQueueData>& aQuickhackResponse);
+
+    /**
+     * \brief Fetch quickhack cache information.
+     * \param aQuickhackCache Where the current quickhack cache will be placed.
+     * \return Whether or not this was the first use of the updated cache.
+     */
+    bool GetQuickhackInfoCache(Red::DynArray<Red::Handle<Impl::NeuroQuickhackDataDto>>& aQuickhackCache);
 #pragma endregion
 
 #pragma region Debug
