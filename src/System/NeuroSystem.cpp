@@ -3,6 +3,8 @@
 #include <Shared/Raw/LocalizationSystem/LocalizationSystem.hpp>
 #include <Shared/Raw/MappinSystem/MappinSystem.hpp>
 #include <Shared/Raw/Player/Player.hpp>
+#include <Shared/Raw/PlayerSystem/PlayerSystem.hpp>
+#include <Shared/Raw/TargetingSystem/TargetingSystem.hpp>
 
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/ChoiceCaptionBluelinePart.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/ChoiceCaptionStringPart.hpp>
@@ -93,11 +95,22 @@ class NeuroQuickhackQueueData : public IScriptable
 {
 public:
     ent::EntityID m_targetEntityId{};
-    DynArray<int> m_usedQuickhackIds{};
-    std::uint32_t m_currentQuickhackIndex{};
+    std::vector<int> m_usedQuickhackIds{};
     RTTI_IMPL_TYPEINFO(NeuroQuickhackQueueData);
     RTTI_IMPL_ALLOCATOR();
 };
+
+class NeuroQuickhackCacheScanData : public IScriptable
+{
+public:
+    std::mutex m_writeLock{};
+    std::vector<Handle<game::Object>> m_scanInputs{};
+    std::vector<Handle<Impl::NeuroQuickhackDataDto>> m_scanResults{};
+
+    RTTI_IMPL_TYPEINFO(NeuroQuickhackCacheScanData);
+    RTTI_IMPL_ALLOCATOR();
+};
+
 /**
  * \brief For interop with Glaze JSON serialization/deserialization, as I'm not sure on being able to make REDengine
  * types work with Glaze.
@@ -697,33 +710,11 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
 
                 for (const auto& target : json.targets)
                 {
-                    DynArray<int> hackIds{};
-
-                    auto invalidIdProvided = false;
-
-                    for (auto i : target.hacks)
-                    {
-                        if (i < 0)
-                        {
-                            results.push_back(
-                                fmt::format("Invalid quickhack ID {} provided for target {}.", i, target.entityId));
-                            invalidIdProvided = true;
-                            break;
-                        }
-
-                        hackIds.PushBack(i);
-                    }
-
-                    if (invalidIdProvided)
-                    {
-                        continue;
-                    }
-
                     auto info = MakeHandle<Impl::NeuroQuickhackQueueData>();
 
-                    info->m_currentQuickhackIndex = 0u;
                     info->m_targetEntityId = target.entityId;
-                    info->m_usedQuickhackIds = std::move(hackIds);
+                    // Check for invalid QH IDs later, doesn't matter
+                    info->m_usedQuickhackIds = std::move(target.hacks);
 
                     if (!AppendToQuickhackQueue(info))
                     {
@@ -788,11 +779,11 @@ void mod::NeuroSystem::DispatchNeuroAction(const neurosdk_message_action_t& aAct
             case CNAME_HASH("query_quickhackable_targets"):
             {
                 // Quickhacks are now cached
-                DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackCache{};
+                std::vector<Handle<Impl::NeuroQuickhackDataDto>> quickhackCache{};
 
                 GetQuickhackInfoCache(quickhackCache);
 
-                if (quickhackCache.IsEmpty())
+                if (quickhackCache.empty())
                 {
                     response->m_actionResponse = "No quickhackable targets found.";
                     break;
@@ -886,7 +877,7 @@ bool mod::NeuroSystem::InitializeConnection()
 {
     // Drain message queue before reinitialization
     std::unique_lock queueLock(m_messageLock);
-    m_messageQueue.Clear();
+    m_messageQueue.clear();
 
     m_neuroSocket.reset();
     m_neuroSocket = std::make_unique<neuro::NeuroSocket>();
@@ -1030,7 +1021,7 @@ void mod::NeuroSystem::TickCommunication(FrameInfo& aFrameInfo, JobQueue& aJobQu
                 i->DispatchNeuroMessage(*m_neuroSocket);
             }
 
-            m_messageQueue.Clear();
+            m_messageQueue.clear();
         });
 }
 
@@ -1157,46 +1148,41 @@ void mod::NeuroSystem::TickSceneInfo(FrameInfo& aInfo, JobQueue& aJobQueue)
 
 void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
 {
-    auto dt = aInfo.deltaTime;
-
     std::unique_lock lock(m_quickhackLock);
+    std::vector<ent::EntityID> targetsToRemove{};
 
-    DynArray<Handle<Impl::NeuroQuickhackQueueData>> removed{};
-
-    for (auto& i : m_quickhackDataQueue)
+    for (auto it = m_quickhackDataQueue.begin(); it != m_quickhackDataQueue.end(); it++)
     {
-        if (i->m_currentQuickhackIndex >= i->m_usedQuickhackIds.Size())
+        const ent::EntityID entityId = it.key();
+        auto& data = it.value();
+
+        if (data->m_usedQuickhackIds.empty())
         {
-            // Done with this one
-            removed.PushBack(i);
+            targetsToRemove.push_back(entityId);
             continue;
         }
 
-        const auto currId = i->m_usedQuickhackIds[i->m_currentQuickhackIndex];
-
+        const auto currId = data->m_usedQuickhackIds.front();        
         auto status = false;
-
-        if (!CallVirtual(this, "QuickhackTargetInternal", status, i->m_targetEntityId, currId))
+        if (!CallVirtual(this, "OnQuickhackTargetInternal", status, entityId, currId))
         {
-            removed.PushBack(i);
-            break;
+            targetsToRemove.push_back(entityId);
+            continue;
         }
-
         if (!status)
         {
-            removed.PushBack(i);
-            break;
+            targetsToRemove.push_back(entityId);
+            continue;
         }
-
-        i->m_currentQuickhackIndex++;
-
+        // List is short enough pop_front is not a problem
+        data->m_usedQuickhackIds.erase(data->m_usedQuickhackIds.begin());
         // Maybe one quickhack per tick to not overload the game? Seems to have weird crashes if full load
         break;
     }
 
-    for (const auto& i : removed)
+    for (ent::EntityID i : targetsToRemove)
     {
-        m_quickhackDataQueue.Remove(i);
+        m_quickhackDataQueue.erase(i);
     }
 }
 
@@ -1226,7 +1212,7 @@ void mod::NeuroSystem::TickCombatLoop(FrameInfo& aInfo)
 
     m_combatQuickhackLoopTimer = CombatQuickhackLoopDelay;
 
-    DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+    std::vector<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
 
     GetQuickhackInfoCache(quickhackDataArray);
 
@@ -1234,8 +1220,7 @@ void mod::NeuroSystem::TickCombatLoop(FrameInfo& aInfo)
         "You are in combat. Here are the current quickhackable targets and their "
         "available hacks. Run as many as possible using the run_quickhacks action. Prefer lethal hacks over non-lethal "
         "ones. This "
-        "action will repeat every few seconds. The current hackable targets are: ."
-    };
+        "action will repeat every few seconds. The current hackable targets are: ."};
 
     for (const auto& i : quickhackDataArray)
     {
@@ -1256,12 +1241,11 @@ void mod::NeuroSystem::TickCombatLoop(FrameInfo& aInfo)
         return;
     }
 
-
     // Prefer this over forced action I think
     SendContextSilent(fmt::format("{}", fmt::join(jsonParts, "\r\n")).c_str());
 }
 
-void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo)
+void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo, JobQueue& aJobQueue)
 {
     std::unique_lock lock(m_quickhackCacheLock);
 
@@ -1277,20 +1261,138 @@ void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo)
         return;
     }
 
-    m_quickhackCacheUpdateInProgress = true;
+    util::Timestamp startTime{};
 
-    JobQueue().Dispatch(
-        [this]()
+    auto playerSystem = GetGameSystem<cp::PlayerSystem>();
+
+    Handle<game::Object> playerPuppet{};
+
+    shared::raw::PlayerSystem::GetPlayerControlledGameObject(playerSystem, playerPuppet);
+
+    if (!playerPuppet)
+    {
+        return;
+    }
+
+    auto targetingSystem = GetGameSystem<game::targeting::TargetingSystem>();
+
+    game::TargetSearchQuery query{};
+
+    query.testedSet = game::TargetingSet::Complete;
+    query.ignoreInstigator = true;
+    query.filterObjectByDistance = true;
+    query.maxDistance = 40.0f;
+
+    shared::raw::TargetSearchQuery::ComponentSearchFilter::Set(
+        &query, (std::uint16_t)(game::targeting::SystemScriptFilter::QuickHack));
+
+    DynArray<TS_TargetPartInfo> partInfoArray{};
+
+    WeakHandle<game::Object> playerPuppetWeak = playerPuppet;
+
+    shared::raw::TargetingSystem::GetTargetParts(targetingSystem, playerPuppetWeak, query, partInfoArray);
+
+    struct TargetInfoSortStruct
+    {
+        Handle<game::Object> m_target;
+        float m_distanceFromCrosshair;
+    };
+
+    std::vector<TargetInfoSortStruct> targetInfoList;
+
+    for (auto& i : partInfoArray)
+    {
+        std::uint8_t index = shared::raw::TS_TargetPartInfo::PartIndex::Ref(&i);
+
+        if (index == 0xFF)
         {
-            DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
-            // Return type is irrelevant here
-            CallVirtual(this, "OnQueryQuickhackTargets", quickhackDataArray);
-            
-            std::unique_lock lock(m_quickhackCacheLock);
-            m_quickhackDataCache = std::move(quickhackDataArray);
+            continue;
+        }
+
+        auto partTable = shared::raw::TS_TargetPartInfo::PartTable::Ref(&i);
+        auto targetEntry = shared::raw::TS_TargetPartInfo::TargetEntry::Ref(&i);
+
+        if (!partTable || !targetEntry)
+        {
+            continue;
+        }
+
+        auto& component = shared::raw::TS_TargetPartInfo::TargetEntryComponentList::Ptr(targetEntry)[index];
+
+        if (auto locked = component.m_component.Lock())
+        {
+            if (auto owner = Cast<game::Object>(AsHandle(locked->owner)))
+            {
+                auto angles = shared::raw::TS_TargetPartInfo::ResolvePartAngleEntry(partTable, index);
+
+                if (!angles)
+                {
+                    continue;
+                }
+
+                auto fov = std::hypotf(angles->m_pitch, angles->m_yaw);
+
+                targetInfoList.push_back({owner, fov});
+            }
+        }
+    }
+
+    if (targetInfoList.empty())
+    {
+        return;
+    }
+
+    std::sort(targetInfoList.begin(), targetInfoList.end(),
+              [](const TargetInfoSortStruct& a, const TargetInfoSortStruct& b)
+              { return a.m_distanceFromCrosshair < b.m_distanceFromCrosshair; });
+
+    auto context = MakeHandle<Impl::NeuroQuickhackCacheScanData>();
+
+    for (auto i = 0u; i < std::min(targetInfoList.size(), MaxParallelizedQuickhackScanTargets); i++)
+    {
+        context->m_scanInputs.push_back(targetInfoList[i].m_target);
+    }
+
+    // TODO: parallel job this thing - at the moment this does NOT use parallel job !!!
+    // (also, quickhack gathering should be made more optimized)
+
+    aJobQueue.Dispatch(
+        [this, context](const JobGroup& aJobGroup)
+        {
+            for (auto& i : context->m_scanInputs)
+            {
+                JobQueue(aJobGroup).Dispatch(
+                    [this, i, context]()
+                    {
+                        Handle<Impl::NeuroQuickhackDataDto> returnValue{};
+
+                        if (!CallVirtual(i, "GetNeuroQuickhackInfo", returnValue))
+                        {
+                            return;
+                        }
+                        if (returnValue)
+                        {
+                            std::unique_lock lock(context->m_writeLock);
+                            context->m_scanResults.push_back(returnValue);
+                        }
+                    });
+            }
+        });
+
+    aJobQueue.Dispatch(
+        [this, context, startTime]()
+        {
+            std::unique_lock contextLock(context->m_writeLock);
+            std::unique_lock cacheLock(m_quickhackCacheLock);
+
+            m_quickhackDataCache = context->m_scanResults;
             m_timeUntilNextQuickhackCacheUpdate = QuickhackCacheUpdateDelay;
             m_quickhackCacheUpdateInProgress = false;
             m_quickhackIsFirstCacheUse = true;
+
+            Context::Spew("{} ms for quickhack cache update with {} targets scanned in parallel, {} entries",
+                          startTime.TimePassedMs().count(), context->m_scanInputs.size(),
+                          context->m_scanResults.size());
         });
 }
 
@@ -1327,11 +1429,12 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
             }
             else if (currentActionName == CNAME_HASH("OnQueryQuickhackTargets"))
             {
-                DynArray<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
+                std::vector<Handle<Impl::NeuroQuickhackDataDto>> quickhackDataArray{};
 
                 if (GetQuickhackInfoCache(quickhackDataArray))
                 {
-                    // Only bother updating on first cache hit (OK this is a little silly cuz we can race with other things but w/e)
+                    // Only bother updating on first cache hit (OK this is a little silly cuz we can race with other
+                    // things but w/e)
                     for (const auto& i : quickhackDataArray)
                     {
                         const auto hackCount = i->m_quickhacks.Size();
@@ -1346,7 +1449,7 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
                             {
                                 auto idx = (uint32_t)(__rdtsc()) % hackCount;
 
-                                data->m_usedQuickhackIds.PushBack(i->m_quickhacks[idx]->m_id);
+                                data->m_usedQuickhackIds.push_back(i->m_quickhacks[idx]->m_id);
                             }
 
                             AppendToQuickhackQueue(data);
@@ -1377,7 +1480,7 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
 void mod::NeuroSystem::AddMessage(const Handle<NeuroMessage>& aMsg)
 {
     std::unique_lock lock(m_messageLock);
-    m_messageQueue.PushBack(aMsg);
+    m_messageQueue.push_back(aMsg);
 }
 
 void mod::NeuroSystem::SendContextDirect(StringView aContextInfo)
@@ -1440,48 +1543,48 @@ bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueDa
 {
     std::unique_lock lock(m_quickhackLock);
 
-    if (aData->m_usedQuickhackIds.Size() == 0u || aData->m_usedQuickhackIds.Size() > MaximumQuickhackQueueLength)
+    if (aData->m_usedQuickhackIds.size() == 0u || aData->m_usedQuickhackIds.size() > MaximumQuickhackQueueLength)
     {
         // Nothing to queue or too much
         return false;
     }
 
-    // Check already present quickhacks
-    for (auto& i : m_quickhackDataQueue)
+    if (m_quickhackDataQueue.contains(aData->m_targetEntityId))
     {
-        if (i->m_targetEntityId == aData->m_targetEntityId)
+        auto& entry = m_quickhackDataQueue.at(aData->m_targetEntityId);
+
+        const auto newSize =
+            aData->m_usedQuickhackIds.size() + entry->m_usedQuickhackIds.size();
+
+        if (newSize > MaximumQuickhackQueueLength)
         {
-            auto newSize =
-                aData->m_usedQuickhackIds.Size() + (i->m_usedQuickhackIds.Size() - i->m_currentQuickhackIndex);
-
-            if (newSize > MaximumQuickhackQueueLength)
-            {
-                // Too many quickhacks queued for this entity
-                return false;
-            }
-
-            // Append new quickhacks
-            for (auto& j : aData->m_usedQuickhackIds)
-            {
-                i->m_usedQuickhackIds.PushBack(j);
-            }
-            return true;
+            return false;
         }
+
+        for (auto i : aData->m_usedQuickhackIds)
+        {
+            if (i >= 0)
+            {
+                entry->m_usedQuickhackIds.push_back(i);
+            }
+        }
+
+        return true;
     }
 
-    m_quickhackDataQueue.PushBack(aData);
+    m_quickhackDataQueue.insert_or_assign(aData->m_targetEntityId, aData);
 
     return true;
 }
 
-bool mod::NeuroSystem::GetQuickhackInfoCache(DynArray<Handle<Impl::NeuroQuickhackDataDto>>& aQuickhackCache)
+bool mod::NeuroSystem::GetQuickhackInfoCache(std::vector<Handle<Impl::NeuroQuickhackDataDto>>& aQuickhackCache)
 {
     std::unique_lock lock(m_quickhackCacheLock);
     const auto first = m_quickhackIsFirstCacheUse;
     m_quickhackIsFirstCacheUse = false;
 
     aQuickhackCache = m_quickhackDataCache;
-    
+
     return first;
 }
 
@@ -1735,7 +1838,8 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
     // Note: not sure how good an idea using PreRenderUpdate is, but it runs in pause menu, so...
     // Note: It does not run in the pause menu, I believe we can do with one update registration
     // aRegistrar->RegisterUpdate(UpdateTickGroup::PreRenderUpdate, this, "NeuroSystem/Communicate",
-    //                            [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue) { Tick(aFrameInfo, aJobQueue); });
+    //                            [this](FrameInfo& aFrameInfo, JobQueue& aJobQueue) { Tick(aFrameInfo, aJobQueue);
+    //                            });
 
     aRegistrar->RegisterUpdate(UpdateBucketMask::Character, UpdateBucketStage::Entities_PostTick, this,
                                "NeuroSystem/Tick",
@@ -1744,7 +1848,7 @@ void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
                                    TickFuzzer(aJobQueue);
                                    TickInputQueue(aFrameInfo);
                                    TickSceneInfo(aFrameInfo, aJobQueue);
-                                   TickQuickhackCache(aFrameInfo);
+                                   TickQuickhackCache(aFrameInfo, aJobQueue);
                                    TickCombatLoop(aFrameInfo);
                                    TickQuickhackQueue(aFrameInfo, aJobQueue);
                                    TickCommunication(aFrameInfo, aJobQueue);
@@ -1779,12 +1883,12 @@ void mod::NeuroSystem::OnWorldDetached(world::RuntimeScene* aScene)
     m_injectedKeyQueue.Clear();
 
     std::unique_lock quickhackLock(m_quickhackLock);
-    m_quickhackDataQueue.Clear();
+    m_quickhackDataQueue.clear();
     m_combatQuickhackLoopActive = false;
 
     // Technically a bit broken but doesn't matter here...
     std::unique_lock cacheLock(m_quickhackCacheLock);
-    m_quickhackDataCache.Clear();
+    m_quickhackDataCache.clear();
 }
 
 void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)
@@ -1827,8 +1931,9 @@ RTTI_DEFINE_CLASS(Impl::NeuroPhoneMessageDto, {
 
 RTTI_DEFINE_CLASS(Impl::NeuroQuickhackQueueData, {
     RTTI_PROPERTY(m_targetEntityId);
-    RTTI_PROPERTY(m_usedQuickhackIds);
 });
+
+RTTI_DEFINE_CLASS(Impl::NeuroQuickhackCacheScanData, {});
 
 RTTI_DEFINE_CLASS(mod::NeuroSystem, {
     RTTI_METHOD(SendContext);

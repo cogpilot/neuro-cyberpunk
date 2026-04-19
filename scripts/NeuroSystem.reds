@@ -97,7 +97,7 @@ public native class NeuroSystem extends IGameSystem {
         this.SendContext(this.OnQueryAllQuests());
     }
 
-    public cb func QuickhackTargetInternal(entId: EntityID, hackId: Int32) -> Bool {
+    public cb func OnQuickhackTargetInternal(entId: EntityID, hackId: Int32) -> Bool {
         let ent = GameInstance.FindEntityByID(GetGameInstance(), entId);
 
         if !IsDefined(ent) {

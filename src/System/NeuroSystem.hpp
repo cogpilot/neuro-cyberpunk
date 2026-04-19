@@ -14,6 +14,7 @@
 #include <Util/Time.hpp>
 
 #include <neurosdk.h>
+#include <tsl/hopscotch_map.h>
 #include <tsl/hopscotch_set.h>
 
 #include <string>
@@ -181,8 +182,10 @@ public:
     // Delay between quickhack cache updates
     static constexpr auto QuickhackCacheUpdateDelay = 0.5f;
 
+    static constexpr auto MaxParallelizedQuickhackScanTargets = 10uz;
+
     // Lock to access Neuro socket
-    Red::SharedSpinLock m_socketLock{};
+    std::mutex m_socketLock{};
 
     // Neuro API socket
     std::unique_ptr<neuro::NeuroSocket> m_neuroSocket{};
@@ -208,10 +211,10 @@ public:
 
 #pragma region Messages
     // Lock for message queue
-    Red::SharedSpinLock m_messageLock{};
+    std::mutex m_messageLock{};
 
     // Message queue for action responses ETC
-    Red::DynArray<Red::Handle<NeuroMessage>> m_messageQueue{};
+    std::vector<Red::Handle<NeuroMessage>> m_messageQueue{};
 
     // Have we sent a forced action message?
     // If so, drop all forced action messages until Neuro responds to the first one
@@ -220,7 +223,7 @@ public:
 #pragma endregion
 
 #pragma region Inputs
-    Red::SharedSpinLock m_inputLock{};
+    std::mutex m_inputLock{};
 
     // Input seems to be registered once per frame + sometimes you need delay
     Red::DynArray<Red::EInputKey> m_injectedKeyQueue{};
@@ -230,7 +233,7 @@ public:
 #pragma endregion
 
 #pragma region SceneHandling
-    Red::SharedSpinLock m_choicehubLock{};
+    std::mutex m_choicehubLock{};
 
     // How long we should receive choice node updates before sending forced action to Neuro
     float m_choiceHubAvailableTime{};
@@ -244,8 +247,8 @@ public:
     // Notes on how this works:
     // Every tick one quickhack per entity is drained from the queue and sent to target entity
     // This should allow for queue quickhacks and multitarget
-    Red::SharedSpinLock m_quickhackLock{};
-    Red::DynArray<Red::Handle<Impl::NeuroQuickhackQueueData>> m_quickhackDataQueue{};
+    std::mutex m_quickhackLock{};
+    tsl::hopscotch_map<std::uint64_t, Red::Handle<Impl::NeuroQuickhackQueueData>> m_quickhackDataQueue{};
 
     // How long before we go through quickhack queue again?
     float m_timeUntilNextQuickhackApply{};
@@ -256,22 +259,22 @@ public:
     // When should we send the next update to Neuro in combat quickhack loop?
     float m_combatQuickhackLoopTimer{};
 
-    Red::SharedSpinLock m_quickhackCacheLock{};
+    std::mutex m_quickhackCacheLock{};
 
     float m_timeUntilNextQuickhackCacheUpdate{};
     bool m_quickhackCacheUpdateInProgress{};
     bool m_quickhackIsFirstCacheUse{};
 
-    Red::DynArray<Red::Handle<Impl::NeuroQuickhackDataDto>> m_quickhackDataCache{};
+    std::vector<Red::Handle<Impl::NeuroQuickhackDataDto>> m_quickhackDataCache{};
 #pragma endregion
 
 #pragma region SMSMessageHandling
-    Red::SharedSpinLock m_smsLock{};
+    std::mutex m_smsLock{};
     Red::WeakHandle<Red::IScriptable> m_actionMessengerDialogViewController{};
 #pragma endregion
 
 #pragma region Fuzzer
-    Red::SharedSpinLock m_fuzzerLock{};
+    std::mutex m_fuzzerLock{};
 
     bool m_fuzzerActive{};
     int m_currentFuzzerFunction{};
@@ -279,7 +282,7 @@ public:
 #pragma endregion
 
 #pragma region Callbacks
-    Red::SharedSpinLock m_callbackLock{};
+    std::mutex m_callbackLock{};
     Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_callbackList{};
     Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_newCallbackList{};
 #pragma endregion
@@ -348,7 +351,7 @@ public:
      * \param aFrameInfo The frame's information.
      * \param aJobQueue The job queue provided by the update registrar.
      */
-    void TickQuickhackCache(Red::FrameInfo& aFrameInfo);
+    void TickQuickhackCache(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
 
     /**
      * \brief Tick function registered by the update registrar to update the combat quickhack timer.
@@ -436,7 +439,7 @@ public:
      * \param aQuickhackCache Where the current quickhack cache will be placed.
      * \return Whether or not this was the first use of the updated cache.
      */
-    bool GetQuickhackInfoCache(Red::DynArray<Red::Handle<Impl::NeuroQuickhackDataDto>>& aQuickhackCache);
+    bool GetQuickhackInfoCache(std::vector<Red::Handle<Impl::NeuroQuickhackDataDto>>& aQuickhackCache);
 #pragma endregion
 
 #pragma region Debug
