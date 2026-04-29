@@ -8,6 +8,7 @@
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/DialogChoiceHubs.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/ListChoiceHubData.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
+#include <RED4ext/Scripting/Natives/Generated/game/Object.hpp>
 #include <RED4ext/Scripting/Natives/entEntityID.hpp>
 
 #include <Socket/Socket.hpp>
@@ -182,8 +183,6 @@ public:
     // Delay between quickhack cache updates
     static constexpr auto QuickhackCacheUpdateDelay = 0.5f;
 
-    static constexpr auto MaxParallelizedQuickhackScanTargets = 10uz;
-
     // Lock to access Neuro socket
     std::mutex m_socketLock{};
 
@@ -265,6 +264,10 @@ public:
     bool m_quickhackCacheUpdateInProgress{};
     bool m_quickhackIsFirstCacheUse{};
 
+    // Building quickhack cache drains one entity per tick to amortize frame cost
+    std::vector<Red::WeakHandle<Red::game::Object>> m_quickhackCacheProcessedObjects{};
+    std::vector<Red::Handle<Impl::NeuroQuickhackDataDto>> m_workInProgressQuickhackDataCache{};
+
     std::vector<Red::Handle<Impl::NeuroQuickhackDataDto>> m_quickhackDataCache{};
 #pragma endregion
 
@@ -283,8 +286,8 @@ public:
 
 #pragma region Callbacks
     std::mutex m_callbackLock{};
-    Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_callbackList{};
-    Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_newCallbackList{};
+    std::vector<Red::WeakHandle<Red::IScriptable>> m_callbackList{};
+    std::vector<Red::WeakHandle<Red::IScriptable>> m_newCallbackList{};
 #pragma endregion
 
 #pragma region NeuroHandlers

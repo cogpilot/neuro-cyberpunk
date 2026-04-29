@@ -1162,7 +1162,7 @@ void mod::NeuroSystem::TickQuickhackQueue(FrameInfo& aInfo, JobQueue& aJobQueue)
             continue;
         }
 
-        const auto currId = data->m_usedQuickhackIds.front();        
+        const auto currId = data->m_usedQuickhackIds.front();
         auto status = false;
         if (!CallVirtual(this, "OnQuickhackTargetInternal", status, entityId, currId))
         {
@@ -1249,11 +1249,6 @@ void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo, JobQueue& aJobQ
 {
     std::unique_lock lock(m_quickhackCacheLock);
 
-    if (m_quickhackCacheUpdateInProgress)
-    {
-        return;
-    }
-
     m_timeUntilNextQuickhackCacheUpdate -= aFrameInfo.deltaTime;
 
     if (m_timeUntilNextQuickhackCacheUpdate > 0.f)
@@ -1261,138 +1256,174 @@ void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo, JobQueue& aJobQ
         return;
     }
 
-    util::Timestamp startTime{};
-
-    auto playerSystem = GetGameSystem<cp::PlayerSystem>();
-
-    Handle<game::Object> playerPuppet{};
-
-    shared::raw::PlayerSystem::GetPlayerControlledGameObject(playerSystem, playerPuppet);
-
-    if (!playerPuppet)
+    if (!m_quickhackCacheUpdateInProgress)
     {
-        return;
-    }
-
-    auto targetingSystem = GetGameSystem<game::targeting::TargetingSystem>();
-
-    game::TargetSearchQuery query{};
-
-    query.testedSet = game::TargetingSet::Complete;
-    query.ignoreInstigator = true;
-    query.filterObjectByDistance = true;
-    query.maxDistance = 40.0f;
-
-    shared::raw::TargetSearchQuery::ComponentSearchFilter::Set(
-        &query, (std::uint16_t)(game::targeting::SystemScriptFilter::QuickHack));
-
-    DynArray<TS_TargetPartInfo> partInfoArray{};
-
-    WeakHandle<game::Object> playerPuppetWeak = playerPuppet;
-
-    shared::raw::TargetingSystem::GetTargetParts(targetingSystem, playerPuppetWeak, query, partInfoArray);
-
-    struct TargetInfoSortStruct
-    {
-        Handle<game::Object> m_target;
-        float m_distanceFromCrosshair;
-    };
-
-    std::vector<TargetInfoSortStruct> targetInfoList;
-
-    for (auto& i : partInfoArray)
-    {
-        std::uint8_t index = shared::raw::TS_TargetPartInfo::PartIndex::Ref(&i);
-
-        if (index == 0xFF)
-        {
-            continue;
-        }
-
-        auto partTable = shared::raw::TS_TargetPartInfo::PartTable::Ref(&i);
-        auto targetEntry = shared::raw::TS_TargetPartInfo::TargetEntry::Ref(&i);
-
-        if (!partTable || !targetEntry)
-        {
-            continue;
-        }
-
-        auto& component = shared::raw::TS_TargetPartInfo::TargetEntryComponentList::Ptr(targetEntry)[index];
-
-        if (auto locked = component.m_component.Lock())
-        {
-            if (auto owner = Cast<game::Object>(AsHandle(locked->owner)))
+        // Gather targets for cache scan
+        aJobQueue.Dispatch(
+            [this]()
             {
-                auto angles = shared::raw::TS_TargetPartInfo::ResolvePartAngleEntry(partTable, index);
+                util::Timestamp startTime{};
 
-                if (!angles)
+                auto playerSystem = GetGameSystem<cp::PlayerSystem>();
+
+                Handle<game::Object> playerPuppet{};
+
+                shared::raw::PlayerSystem::GetPlayerControlledGameObject(playerSystem, playerPuppet);
+
+                if (!playerPuppet)
                 {
-                    continue;
+                    return;
                 }
 
-                auto fov = std::hypotf(angles->m_pitch, angles->m_yaw);
+                auto targetingSystem = GetGameSystem<game::targeting::TargetingSystem>();
 
-                targetInfoList.push_back({owner, fov});
-            }
-        }
-    }
+                game::TargetSearchQuery query{};
 
-    if (targetInfoList.empty())
-    {
+                query.testedSet = game::TargetingSet::Complete;
+                query.ignoreInstigator = true;
+                query.filterObjectByDistance = true;
+                query.maxDistance = 40.0f;
+
+                shared::raw::TargetSearchQuery::ComponentSearchFilter::Set(
+                    &query, (std::uint16_t)(game::targeting::SystemScriptFilter::QuickHack));
+
+                DynArray<TS_TargetPartInfo> partInfoArray{};
+
+                WeakHandle<game::Object> playerPuppetWeak = playerPuppet;
+
+                shared::raw::TargetingSystem::GetTargetParts(targetingSystem, playerPuppetWeak, query, partInfoArray);
+
+                struct TargetInfoSortStruct
+                {
+                    Handle<game::Object> m_target;
+                    float m_distanceFromCrosshair;
+                };
+
+                std::vector<TargetInfoSortStruct> targetInfoList;
+
+                for (auto& i : partInfoArray)
+                {
+                    std::uint8_t index = shared::raw::TS_TargetPartInfo::PartIndex::Ref(&i);
+
+                    if (index == 0xFF)
+                    {
+                        continue;
+                    }
+
+                    auto partTable = shared::raw::TS_TargetPartInfo::PartTable::Ref(&i);
+                    auto targetEntry = shared::raw::TS_TargetPartInfo::TargetEntry::Ref(&i);
+
+                    if (!partTable || !targetEntry)
+                    {
+                        continue;
+                    }
+
+                    auto& component = shared::raw::TS_TargetPartInfo::TargetEntryComponentList::Ptr(targetEntry)[index];
+
+                    if (auto locked = component.m_component.Lock())
+                    {
+                        if (Handle<game::Object> owner = Cast<game::Object>(AsHandle(locked->owner)))
+                        {
+                            auto angles = shared::raw::TS_TargetPartInfo::ResolvePartAngleEntry(partTable, index);
+
+                            if (!angles)
+                            {
+                                continue;
+                            }
+
+                            auto fov = std::hypotf(angles->m_pitch, angles->m_yaw);
+
+                            targetInfoList.push_back({owner, fov});
+                        }
+                    }
+                }
+
+                if (targetInfoList.empty())
+                {
+                    return;
+                }
+
+                std::sort(targetInfoList.begin(), targetInfoList.end(),
+                          [](const TargetInfoSortStruct& a, const TargetInfoSortStruct& b)
+                          { return a.m_distanceFromCrosshair < b.m_distanceFromCrosshair; });
+
+                std::unique_lock lock(m_quickhackCacheLock);
+
+                m_workInProgressQuickhackDataCache.clear();
+                m_quickhackCacheProcessedObjects.clear();
+
+                // We don't really need to limit target number if it's one per frame
+                for (auto& i : targetInfoList)
+                {
+                    m_quickhackCacheProcessedObjects.push_back(i.m_target);
+                }
+
+                m_quickhackCacheUpdateInProgress = true;
+
+                Context::Spew("{} ms to gather {} quickhackable targets for cache update.",
+                              startTime.TimePassedMs().count(), m_quickhackCacheProcessedObjects.size());
+            });
         return;
     }
 
-    std::sort(targetInfoList.begin(), targetInfoList.end(),
-              [](const TargetInfoSortStruct& a, const TargetInfoSortStruct& b)
-              { return a.m_distanceFromCrosshair < b.m_distanceFromCrosshair; });
-
-    auto context = MakeHandle<Impl::NeuroQuickhackCacheScanData>();
-
-    for (auto i = 0u; i < std::min(targetInfoList.size(), MaxParallelizedQuickhackScanTargets); i++)
-    {
-        context->m_scanInputs.push_back(targetInfoList[i].m_target);
-    }
-
-    // TODO: parallel job this thing - at the moment this does NOT use parallel job !!!
-    // (also, quickhack gathering should be made more optimized)
-
+    // Gather one target per frame
+    // Note: doing it this way may cause issues with inconsistent RAM state and whatnot between targets
+    // But whatever
     aJobQueue.Dispatch(
-        [this, context](const JobGroup& aJobGroup)
+        [this]()
         {
-            for (auto& i : context->m_scanInputs)
+            std::unique_lock lock(m_quickhackCacheLock);
+
+            // Done with cache update
+            if (m_quickhackCacheProcessedObjects.empty())
             {
-                JobQueue(aJobGroup).Dispatch(
-                    [this, i, context]()
-                    {
-                        Handle<Impl::NeuroQuickhackDataDto> returnValue{};
-
-                        if (!CallVirtual(i, "GetNeuroQuickhackInfo", returnValue))
-                        {
-                            return;
-                        }
-                        if (returnValue)
-                        {
-                            std::unique_lock lock(context->m_writeLock);
-                            context->m_scanResults.push_back(returnValue);
-                        }
-                    });
+                m_quickhackDataCache = std::move(m_workInProgressQuickhackDataCache);
+                m_quickhackIsFirstCacheUse = true; // Needed for tester
+                m_quickhackCacheUpdateInProgress = false;
+                m_timeUntilNextQuickhackCacheUpdate = QuickhackCacheUpdateDelay;
+                m_workInProgressQuickhackDataCache.clear();
+                
+                return;
             }
-        });
 
-    aJobQueue.Dispatch(
-        [this, context, startTime]()
-        {
-            std::unique_lock contextLock(context->m_writeLock);
-            std::unique_lock cacheLock(m_quickhackCacheLock);
+            util::Timestamp startTime{};
 
-            m_quickhackDataCache = context->m_scanResults;
-            m_timeUntilNextQuickhackCacheUpdate = QuickhackCacheUpdateDelay;
-            m_quickhackCacheUpdateInProgress = false;
-            m_quickhackIsFirstCacheUse = true;
+            WeakHandle<game::Object> weakTarget = m_quickhackCacheProcessedObjects.back();
+            m_quickhackCacheProcessedObjects.pop_back();
 
-            Context::Spew("{} ms for quickhack cache update with {} targets scanned in parallel, {} entries",
-                          startTime.TimePassedMs().count(), context->m_scanInputs.size(),
-                          context->m_scanResults.size());
+            if (auto target = weakTarget.Lock())
+            {
+                Handle<Impl::NeuroQuickhackDataDto> returnValue{};
+
+                if (!CallVirtual(target, "GetNeuroQuickhackInfo", returnValue))
+                {
+                    return;
+                }
+                if (returnValue)
+                {
+                    auto hasUsableHacks = false;
+
+                    for (auto& i : returnValue->m_quickhacks)
+                    {
+                        if (i->m_canUse)
+                        {
+                            hasUsableHacks = true;
+                            break;
+                        }
+                    }
+
+                    if (!hasUsableHacks)
+                    {
+                        return;
+                    }
+
+                    m_workInProgressQuickhackDataCache.push_back(returnValue);
+                }
+
+                Context::Spew("{} ms to gather quickhack info for target {:016x}, {} entries in cache so far.",
+                              startTime.TimePassedMs().count(), target->entityID.hash,
+                              m_workInProgressQuickhackDataCache.size());
+            }
         });
 }
 
@@ -1536,7 +1567,7 @@ void mod::NeuroSystem::FirePendingCallbacks(bool aState)
         }
     }
 
-    m_newCallbackList.Clear();
+    m_newCallbackList.clear();
 }
 
 bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueData>& aData)
@@ -1553,8 +1584,7 @@ bool mod::NeuroSystem::AppendToQuickhackQueue(Handle<Impl::NeuroQuickhackQueueDa
     {
         auto& entry = m_quickhackDataQueue.at(aData->m_targetEntityId);
 
-        const auto newSize =
-            aData->m_usedQuickhackIds.size() + entry->m_usedQuickhackIds.size();
+        const auto newSize = aData->m_usedQuickhackIds.size() + entry->m_usedQuickhackIds.size();
 
         if (newSize > MaximumQuickhackQueueLength)
         {
@@ -1813,24 +1843,19 @@ bool mod::NeuroSystem::IsConnectionAlive()
     return !!m_neuroSocket;
 }
 
-void mod::NeuroSystem::RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext)
+void mod::NeuroSystem::RegisterAliveCallback(WeakHandle<IScriptable> aContext)
 {
     std::unique_lock lock(m_callbackLock);
-    m_callbackList.PushBack(aContext);
-    m_newCallbackList.PushBack(aContext);
+    m_callbackList.push_back(aContext);
+    m_newCallbackList.push_back(aContext);
 }
 
-void mod::NeuroSystem::UnregisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext)
+void mod::NeuroSystem::UnregisterAliveCallback(WeakHandle<IScriptable> aContext)
 {
     std::unique_lock lock(m_callbackLock);
-    for (auto i = 0u; i < m_callbackList.Size(); i++)
-    {
-        if (m_callbackList[i].instance == aContext.instance)
-        {
-            m_callbackList.RemoveAt(i);
-            break;
-        }
-    }
+    // m_newCallbackList does not need remove here, because it will get trimmed down anyway
+    std::erase_if(m_newCallbackList,
+                  [&aContext](const WeakHandle<IScriptable>& i) { return i.instance == aContext.instance; });
 }
 
 void mod::NeuroSystem::OnRegisterUpdates(UpdateRegistrar* aRegistrar)
@@ -1888,7 +1913,10 @@ void mod::NeuroSystem::OnWorldDetached(world::RuntimeScene* aScene)
 
     // Technically a bit broken but doesn't matter here...
     std::unique_lock cacheLock(m_quickhackCacheLock);
+    m_quickhackCacheUpdateInProgress = false;
     m_quickhackDataCache.clear();
+    m_quickhackCacheProcessedObjects.clear();
+    m_workInProgressQuickhackDataCache.clear();
 }
 
 void mod::NeuroSystem::OnInitialize(const Red::JobHandle& aJob)
@@ -1929,9 +1957,7 @@ RTTI_DEFINE_CLASS(Impl::NeuroPhoneMessageDto, {
     RTTI_PROPERTY(m_responseOptions);
 });
 
-RTTI_DEFINE_CLASS(Impl::NeuroQuickhackQueueData, {
-    RTTI_PROPERTY(m_targetEntityId);
-});
+RTTI_DEFINE_CLASS(Impl::NeuroQuickhackQueueData, { RTTI_PROPERTY(m_targetEntityId); });
 
 RTTI_DEFINE_CLASS(Impl::NeuroQuickhackCacheScanData, {});
 
