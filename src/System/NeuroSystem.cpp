@@ -1468,6 +1468,12 @@ void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
                     // things but w/e)
                     for (const auto& i : quickhackDataArray)
                     {
+                        if (i->m_isInanimate)
+                        {
+                            // Skip cars/useless stuff, only focus on enemies
+                            continue;
+                        }
+
                         const auto hackCount = i->m_quickhacks.Size();
 
                         if (hackCount > 0u)
