@@ -29,13 +29,11 @@ This builds `NeuroInteractions.dll` in `build/`. Be sure to run `xmake package` 
 ------------
 
 - Copy manually: take the contents of `packaging/` and drop them into `CP2077_PATH`.
-- Or let xmake install for you (uses `CP2077_PATH`):  
+- Or let xmake install for you (uses `CP2077_PATH`, the plugin script directory will be symlinked to the one in the repo):  
 
   ```
   xmake install
   ```
-
-*note that xmake install does not copy across scripts currently, you will need to manually copy those over yourself*
 
 - Launch the game (or `xmake run` if `CP2077_PATH` is set) and enable the plugin under RED4ext.
 
