@@ -19,11 +19,11 @@ struct Timestamp
 	/**
 	 * \brief Returns the amount of milliseconds passed since construction.
 	 */
-    Milliseconds TimePassedMs();
+    Milliseconds TimePassedMs() const;
 
 	/**
      * \brief Returns the amount of seconds passed since construction.
      */
-    Seconds TimePassed();
+    Seconds TimePassed() const;
 };
 }

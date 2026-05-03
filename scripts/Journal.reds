@@ -1,6 +1,67 @@
 module Neuro
 
 @addMethod(JournalManager)
+public final func CallContactByName(contactName: String) -> Bool {
+    let phoneSystem = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"PhoneSystem") as PhoneSystem;
+
+    if !IsDefined(phoneSystem) {
+        return false;
+    }
+
+    if !phoneSystem.IsCallingEnabled() {
+        return false;
+    }
+
+    let context: JournalRequestContext;
+    context.stateFilter.active = true;
+    context.stateFilter.inactive = true;
+
+    let contacts: array<wref<JournalEntry>>;
+    this.GetContacts(context, contacts);
+
+    for contactEntryRaw in contacts {
+        let contactEntry = contactEntryRaw as JournalContact;
+        if IsDefined(contactEntry) && contactEntry.IsKnown(this) && contactEntry.IsCallable(this) {
+            let localizedName = GetLocalizedText(contactEntry.GetLocalizedName(this));
+
+            // Match against the displayed English contact name, ignoring case.
+            if IsStringValid(localizedName) && StrCmp(localizedName, contactName, -1, true) == 0 {
+                let callRequest = new questTriggerCallRequest();
+                callRequest.addressee = StringToName(contactEntry.GetId());
+                callRequest.caller = n"Player";
+                callRequest.callPhase = questPhoneCallPhase.IncomingCall;
+                callRequest.callMode = questPhoneCallMode.Video;
+                phoneSystem.QueueRequest(callRequest);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+@addMethod(JournalManager)
+public final func GetContactList() -> [String] {
+    let context: JournalRequestContext;
+    context.stateFilter.active = true;
+    context.stateFilter.inactive = true;
+
+    let contacts: [wref<JournalEntry>];
+    this.GetContacts(context, contacts);
+    let contactNames: [String];
+    for contactRaw in contacts {
+        let contact = contactRaw as JournalContact;
+
+        if IsDefined(contact) {
+            let localizedName = GetLocalizedText(contact.GetLocalizedName(this));
+            if IsStringValid(localizedName) {
+                ArrayPush(contactNames, localizedName);
+            }
+        }
+    }
+    return contactNames;
+}
+
+@addMethod(JournalManager)
 public final func TrackQuestByName(questName: String) -> String {
     // Track quest by localized name
     let ctx: JournalRequestContext;
@@ -32,6 +93,36 @@ public final func TrackQuestByName(questName: String) -> String {
     return s"Failed to find quest \(questName)";
 }
 
+@addMethod(JournalQuest)
+public final func IsImportantSideQuest() -> Bool {
+    if NotEquals(this.GetType(), gameJournalQuestType.SideQuest) {
+        return false;
+    }
+
+    // Ending-relevant quests + romance questlines
+    let importantSideQuests = [
+                                "sq004",
+                                "sq011",
+                                "sq017",
+                                "sq018",
+                                "sq021",
+                                "sq026",
+                                "sq027",
+                                "sq028",
+                                "sq029",
+                                "sq030",
+                                "sq031"
+                                ];
+
+    for sqPrefix in importantSideQuests {
+        if StrBeginsWith(this.id, sqPrefix) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 @addMethod(JournalManager)
 public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String {
     // TODO: use string builder for building data?
@@ -44,10 +135,25 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
     let journalWrapper = new JournalWrapper();
     journalWrapper.Init(GetGameInstance());
 
-    let descriptionStringBuilder: [String];
+    let questDataBuilder: [String];
+
+    let questData = journalWrapper.BuildQuestData(asQuest);
+
+    ArrayPush(questDataBuilder, s"Name: \(GetLocalizedText(questData.GetTitle())), type: \(questData.GetType())");
+
+    if asQuest.IsImportantSideQuest() {
+        ArrayPush(questDataBuilder, "This side quest is important to the game's story. Pay attention.");
+    }
+
+    if this.IsEp1Entry(asQuest) {
+        ArrayPush(questDataBuilder, "This is a Phantom Liberty quest.");
+    }
+
     let uniqueDescriptions: [String];
 
     let descriptionEntries = QuestLogUtils.GetDescriptions(this, asQuest);
+
+    ArrayPush(questDataBuilder, "Description:");
 
     for questDescEntryWeak in descriptionEntries {
         let questDescEntry: ref<JournalQuestDescription> = questDescEntryWeak;
@@ -60,119 +166,104 @@ public func GetNeuroFriendlyQuestData(questEntry: wref<JournalEntry>) -> String 
 
                 let localizedText = GetLocalizedText(descLocString);
 
-                ArrayPush(descriptionStringBuilder, localizedText);
+                ArrayPush(questDataBuilder, localizedText);
             }
         }
     }
 
-    let description = StringUtils.BuildString(descriptionStringBuilder, "\r\n");
-
-    // This might be slow, as it's very recursive
-
-    let questData = journalWrapper.BuildQuestData(asQuest);
     let districtRecord: ref<District_Record> = MappinUtils.GetDistrictRecord(questData.GetDistrict());
 
-    let baseData = s"Name: \(GetLocalizedText(questData.GetTitle())), type: \(questData.GetType())\r\nDescription:\r\n\(description)";
-
     if IsDefined(districtRecord) {
-        baseData += s"\r\nDistrict: \(GetLocalizedText(districtRecord.LocalizedName()))";
+        ArrayPush(questDataBuilder, s"District: \(GetLocalizedText(districtRecord.LocalizedName()))");
     }
 
+    let firstObjective = false;
     let objectives = questData.GetObjectives();
 
-    if ArraySize(objectives) > 0 {
-        baseData += "\r\nObjectives:\r\n";
-    }
-
-    for objective in questData.GetObjectives() {
+    for objective in objectives {
         if Equals(objective.GetStatus(), gameJournalEntryState.Active) {
-            let objectiveDataBase = s" - \(GetLocalizedText(objective.GetDescription()))";
+            if !firstObjective {
+                ArrayPush(questDataBuilder, "Objectives:");
+                firstObjective = true;
+            }
+            let objectiveData = s" - \(GetLocalizedText(objective.GetDescription()))";
 
             if objective.IsTracked() {
-                objectiveDataBase += " (Tracked)";
+                objectiveData += " (Tracked)";
             }
 
             if this.GetIsObjectiveOptional(objective.GetQuestObjective()) {
-                objectiveDataBase += " (Optional)";
+                objectiveData += " (Optional)";
             }
 
             if objective.m_totalCounter != 0 {
-                objectiveDataBase
+                objectiveData
                     += s" (\(objective.m_currentCounter)/\(objective.m_totalCounter))";
             }
 
-            objectiveDataBase += "\r\n";
+            ArrayPush(questDataBuilder, objectiveData);
 
             let subObjectives = objective.GetSubObjectives();
 
-            if ArraySize(subObjectives) > 0 {
-                objectiveDataBase += " - Subobjectives:\r\n";
-                for subObjective in subObjectives {
-                    if Equals(subObjective.GetStatus(), gameJournalEntryState.Active) {
-                        let subObjectiveDataBase = GetLocalizedText(subObjective.GetDescription());
-
-                        if subObjective.IsTracked() {
-                            subObjectiveDataBase += " (Tracked)";
-                        }
-
-                        if this.GetIsObjectiveOptional(subObjective.GetQuestObjective()) {
-                            subObjectiveDataBase += " (Optional)";
-                        }
-
-                        if subObjective.m_totalCounter != 0 {
-                            subObjectiveDataBase
-                                += s" (\(subObjective.m_currentCounter)/\(subObjective.m_totalCounter))";
-                        }
-
-                        subObjectiveDataBase += "\r\n";
-
-                        objectiveDataBase += s"  - \(subObjectiveDataBase)";
+            let firstSubObjective = false;
+            for subObjective in subObjectives {
+                if Equals(subObjective.GetStatus(), gameJournalEntryState.Active) {
+                    if !firstSubObjective {
+                        ArrayPush(questDataBuilder, " - Subobjectives:");
+                        firstSubObjective = true;
                     }
+                    let subObjectiveData = s"  - \(GetLocalizedText(subObjective.GetDescription()))";
+
+                    if subObjective.IsTracked() {
+                        subObjectiveData += " (Tracked)";
+                    }
+
+                    if this.GetIsObjectiveOptional(subObjective.GetQuestObjective()) {
+                        subObjectiveData += " (Optional)";
+                    }
+
+                    if subObjective.m_totalCounter != 0 {
+                        subObjectiveData
+                            += s" (\(subObjective.m_currentCounter)/\(subObjective.m_totalCounter))";
+                    }
+
+                    ArrayPush(questDataBuilder, subObjectiveData);
                 }
             }
-
-            baseData += objectiveDataBase;
         }
     }
 
     let links = questData.GetLinks();
-    let linkData = "";
+    let duplicateCodexNameArray: [String];
 
-    if ArraySize(links) > 0 {
-        // Just their names, I guess?
+    let firstLink = false;
 
-        // HACK because I can't be arsed to fix this right, this is O(N^2) but for codex link size doesn't matter
-        // Codex links seem to be per phase or objective I think
-        let duplicateCodexNameArray: [String];
+    for link in links {
+        if IsDefined(link) && Equals(this.GetEntryState(link), gameJournalEntryState.Active) {
+            if !firstLink {
+                ArrayPush(questDataBuilder, "Links:");
+                firstLink = true;
+            }
+            let asCodexEntry: ref<JournalCodexEntry> = link as JournalCodexEntry;
 
-        for link in links {
-            if IsDefined(link) && Equals(this.GetEntryState(link), gameJournalEntryState.Active) {
-                let asCodexEntry: ref<JournalCodexEntry> = link as JournalCodexEntry;
+            if IsDefined(asCodexEntry) {
+                let title = asCodexEntry.GetTitle();
+                if !ArrayContains(duplicateCodexNameArray, title) {
+                    ArrayPush(questDataBuilder, s" - Database entry \(GetLocalizedText(title))");
+                    ArrayPush(duplicateCodexNameArray, title);
+                }
+            } else {
+                // Special case: Phantom Liberty prerequisite quest
+                let asQuestEntry: ref<JournalQuest> = link as JournalQuest;
 
-                if IsDefined(asCodexEntry) {
-                    let title = asCodexEntry.GetTitle();
-                    if !ArrayContains(duplicateCodexNameArray, title) {
-                        linkData += s" - Database entry \(GetLocalizedText(title))\r\n";
-                        ArrayPush(duplicateCodexNameArray, title);
-                    }
-                } else {
-                    // Special case: Phantom Liberty prerequisite quest
-                    let asQuestEntry: ref<JournalQuest> = link as JournalQuest;
-
-                    if IsDefined(asQuestEntry) {
-                        linkData
-                            += s" - Quest \(GetLocalizedText(asQuestEntry.GetTitle(this)))\r\n";
-                    }
+                if IsDefined(asQuestEntry) {
+                    ArrayPush(questDataBuilder, s" - Quest \(GetLocalizedText(asQuestEntry.GetTitle(this)))");
                 }
             }
         }
     }
 
-    if NotEquals(linkData, "") {
-        baseData += s"Links:\r\n\(linkData)";
-    }
-
-    return baseData;
+    return StringUtils.BuildString(questDataBuilder, "\r\n");
 }
 
 @wrapMethod(IncomingCallLogicController)

@@ -6,12 +6,12 @@ util::Timestamp::Timestamp()
 
 }
 
-util::Timestamp::Milliseconds util::Timestamp::TimePassedMs()
+util::Timestamp::Milliseconds util::Timestamp::TimePassedMs() const
 {
     return std::chrono::duration_cast<util::Timestamp::Milliseconds>(Clock::now() - m_point);
 }
 
-util::Timestamp::Seconds util::Timestamp::TimePassed()
+util::Timestamp::Seconds util::Timestamp::TimePassed() const
 {
     return std::chrono::duration_cast<util::Timestamp::Seconds>(Clock::now() - m_point);
 }

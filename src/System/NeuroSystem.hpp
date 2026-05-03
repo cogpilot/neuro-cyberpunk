@@ -8,12 +8,14 @@
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/DialogChoiceHubs.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/interactions/vis/ListChoiceHubData.hpp>
 #include <RED4ext/Scripting/Natives/Generated/game/mappins/IMappin.hpp>
+#include <RED4ext/Scripting/Natives/Generated/game/Object.hpp>
 #include <RED4ext/Scripting/Natives/entEntityID.hpp>
 
 #include <Socket/Socket.hpp>
 #include <Util/Time.hpp>
 
 #include <neurosdk.h>
+#include <tsl/hopscotch_map.h>
 #include <tsl/hopscotch_set.h>
 
 #include <string>
@@ -21,8 +23,9 @@
 
 namespace Impl
 {
-class NeuroQuickhackDataDto;
 class NeuroPhoneMessageDto;
+class NeuroQuickhackDataDto;
+class NeuroQuickhackQueueData;
 } // namespace Impl
 
 namespace mod
@@ -135,7 +138,8 @@ struct NeuroChoiceContext
     bool m_isTimed{};
     float m_timer{};
 
-    static NeuroChoiceContext FromGameData(const Red::game::interactions::vis::ListChoiceData& aChoiceData, Red::CString& aHubTitle, int aId, bool aIsTimed, float aChoiceTimer);
+    static NeuroChoiceContext FromGameData(const Red::game::interactions::vis::ListChoiceData& aChoiceData,
+                                           Red::CString& aHubTitle, int aId, bool aIsTimed, float aChoiceTimer);
 };
 
 /**
@@ -171,8 +175,16 @@ public:
 
     static constexpr auto ChoicehubDelayBeforeForcedAction = 1.5f;
 
+    static constexpr auto MaximumQuickhackQueueLength = 4u;
+
+    // Delay for sending quickhack force actions to Neuro
+    static constexpr auto CombatQuickhackLoopDelay = 5.f;
+
+    // Delay between quickhack cache updates
+    static constexpr auto QuickhackCacheUpdateDelay = 0.5f;
+
     // Lock to access Neuro socket
-    Red::SharedSpinLock m_socketLock{};
+    std::mutex m_socketLock{};
 
     // Neuro API socket
     std::unique_ptr<neuro::NeuroSocket> m_neuroSocket{};
@@ -198,10 +210,10 @@ public:
 
 #pragma region Messages
     // Lock for message queue
-    Red::SharedSpinLock m_messageLock{};
+    std::mutex m_messageLock{};
 
     // Message queue for action responses ETC
-    Red::DynArray<Red::Handle<NeuroMessage>> m_messageQueue{};
+    std::vector<Red::Handle<NeuroMessage>> m_messageQueue{};
 
     // Have we sent a forced action message?
     // If so, drop all forced action messages until Neuro responds to the first one
@@ -210,7 +222,7 @@ public:
 #pragma endregion
 
 #pragma region Inputs
-    Red::SharedSpinLock m_inputLock{};
+    std::mutex m_inputLock{};
 
     // Input seems to be registered once per frame + sometimes you need delay
     Red::DynArray<Red::EInputKey> m_injectedKeyQueue{};
@@ -220,7 +232,7 @@ public:
 #pragma endregion
 
 #pragma region SceneHandling
-    Red::SharedSpinLock m_choicehubLock{};
+    std::mutex m_choicehubLock{};
 
     // How long we should receive choice node updates before sending forced action to Neuro
     float m_choiceHubAvailableTime{};
@@ -231,29 +243,51 @@ public:
 #pragma endregion
 
 #pragma region QuickhackHandling
-    Red::ent::EntityID m_quickhackActionTargetId{};
+    // Notes on how this works:
+    // Every tick one quickhack per entity is drained from the queue and sent to target entity
+    // This should allow for queue quickhacks and multitarget
+    std::mutex m_quickhackLock{};
+    tsl::hopscotch_map<std::uint64_t, Red::Handle<Impl::NeuroQuickhackQueueData>> m_quickhackDataQueue{};
+
+    // How long before we go through quickhack queue again?
+    float m_timeUntilNextQuickhackApply{};
+
+    // Are we in combat and thus should spam Neuro with quickhack targets every N seconds?
+    bool m_combatQuickhackLoopActive{};
+
+    // When should we send the next update to Neuro in combat quickhack loop?
+    float m_combatQuickhackLoopTimer{};
+
+    std::mutex m_quickhackCacheLock{};
+
+    float m_timeUntilNextQuickhackCacheUpdate{};
+    bool m_quickhackCacheUpdateInProgress{};
+    bool m_quickhackIsFirstCacheUse{};
+
+    // Building quickhack cache drains one entity per tick to amortize frame cost
+    std::vector<Red::WeakHandle<Red::game::Object>> m_quickhackCacheProcessedObjects{};
+    std::vector<Red::Handle<Impl::NeuroQuickhackDataDto>> m_workInProgressQuickhackDataCache{};
+
+    std::vector<Red::Handle<Impl::NeuroQuickhackDataDto>> m_quickhackDataCache{};
 #pragma endregion
 
 #pragma region SMSMessageHandling
-    Red::SharedSpinLock m_smsLock{};
+    std::mutex m_smsLock{};
     Red::WeakHandle<Red::IScriptable> m_actionMessengerDialogViewController{};
 #pragma endregion
-   
+
 #pragma region Fuzzer
-    Red::SharedSpinLock m_fuzzerLock{};
-    
+    std::mutex m_fuzzerLock{};
+
     bool m_fuzzerActive{};
     int m_currentFuzzerFunction{};
     std::uint64_t m_fuzzerCalls{};
-
-    Red::SharedSpinLock m_fuzzerQuickhackLock{};
-    bool m_fuzzerQuickhackCanBeCalled{};
 #pragma endregion
 
 #pragma region Callbacks
-    Red::SharedSpinLock m_callbackLock{};
-    Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_callbackList{};
-    Red::DynArray<Red::WeakHandle<Red::IScriptable>> m_newCallbackList{};
+    std::mutex m_callbackLock{};
+    std::vector<Red::WeakHandle<Red::IScriptable>> m_callbackList{};
+    std::vector<Red::WeakHandle<Red::IScriptable>> m_newCallbackList{};
 #pragma endregion
 
 #pragma region NeuroHandlers
@@ -307,9 +341,32 @@ public:
     void TickSceneInfo(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
 
     /**
-    * \brief Tick function registered by update registrar to spam functions to stress test responses for races/whatnot.
-    * \param aQueue The associated frame job queue.
-    */
+     * \brief Tick function registered by the update registrar to update quickhack information.
+     *
+     * \param aFrameInfo The frame's information.
+     * \param aJobQueue The job queue provided by the update registrar.
+     */
+    void TickQuickhackQueue(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
+
+    /**
+     * \brief Tick function registered by the update registrar to update the quickhack cache.
+     * 
+     * \param aFrameInfo The frame's information.
+     * \param aJobQueue The job queue provided by the update registrar.
+     */
+    void TickQuickhackCache(Red::FrameInfo& aFrameInfo, Red::JobQueue& aJobQueue);
+
+    /**
+     * \brief Tick function registered by the update registrar to update the combat quickhack timer.
+     * 
+     * \param aFrameInfo The frame's information.
+     */
+    void TickCombatLoop(Red::FrameInfo& aFrameInfo);
+
+    /**
+     * \brief Tick function registered by update registrar to spam functions to stress test responses for races/whatnot.
+     * \param aQueue The associated frame job queue.
+     */
     void TickFuzzer(Red::JobQueue& aQueue);
 
     /**
@@ -351,7 +408,8 @@ public:
     void FireScriptCallbacks(bool aState);
 
     /**
-     * \brief Fire all newly registered callbacks with Neuro connection state and clean the newly registered callback list.
+     * \brief Fire all newly registered callbacks with Neuro connection state and clean the newly registered callback
+     * list.
      * \param aState The current connection state.
      */
     void FirePendingCallbacks(bool aState);
@@ -369,6 +427,22 @@ public:
      * so this is safe.
      */
     static NeuroSystem* GetInstance();
+
+    /**
+     * \brief Append quickhack information to the quickhack queue. Note that if there already is quickhack information
+     * associated with the target entity ID, the quickhack information will be appended to the existing information. The
+     * maximum queue length cannot exceed 4.
+     * \param aQuickhackResponse The quickhack information.
+     * \return Whether or not appending the quickhack information succeeded.
+     */
+    bool AppendToQuickhackQueue(Red::Handle<Impl::NeuroQuickhackQueueData>& aQuickhackResponse);
+
+    /**
+     * \brief Fetch quickhack cache information.
+     * \param aQuickhackCache Where the current quickhack cache will be placed.
+     * \return Whether or not this was the first use of the updated cache.
+     */
+    bool GetQuickhackInfoCache(std::vector<Red::Handle<Impl::NeuroQuickhackDataDto>>& aQuickhackCache);
 #pragma endregion
 
 #pragma region Debug
@@ -388,12 +462,19 @@ public:
     void InjectKeypressChain(const Red::DynArray<Red::EInputKey>& aKeys);
 
     /**
-    * \brief Toggle the query action fuzzer. Available via RTTI as well.
-    */
+     * \brief Toggle the query action fuzzer. Available via RTTI as well.
+     */
     void ToggleFuzzer();
 #pragma endregion
 
 #pragma region ScriptingUtils
+    /**
+     * \brief Set whether or not we're in combat. This is used for quickhack handling, as we want to spam Neuro with
+     * quickhacks when we're doing combat
+     * \param aInCombat Whether or not we are in combat.
+     */
+    void SetCombatState(bool aInCombat);
+
     /**
      * \brief Track a mappin for Autodrive to work, as MappinSystem does not export a TrackMappin method for generic
      * mappins OOTB and I don't believe this mod should do Codeware work.
@@ -417,8 +498,9 @@ public:
     /**
      * \brief Dispatch new quickhack info to Neuro.
      * \param aQuickhackInfo The available quickhack information gathered by script.
+     * \param aIsCounterHack Whether or not the target is actively hacking us. Set when we send this from us being hacked.
      */
-    void OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo);
+    void OnQuickhackDataProvided(Red::Handle<Impl::NeuroQuickhackDataDto>& aQuickhackInfo, bool aIsCounterHack);
 
     /**
      * \brief Dispatch new phone message info to Neuro.
@@ -432,15 +514,16 @@ public:
     void ResetBadConnectionCounter();
 
     /**
-    * \brief Check if Neuro connection is alive.
-    */
+     * \brief Check if Neuro connection is alive.
+     */
     bool IsConnectionAlive();
 
     /**
-    * \brief Register a callback for Neuro socket connection state. The function name is fixed as "OnNeuroSocketUpdate".
-    * New callbacks will have this fired the next tick. The function may be called several times in one tick.
-    * \param aContext The object the callback is owned by.
-    */
+     * \brief Register a callback for Neuro socket connection state. The function name is fixed as
+     * "OnNeuroSocketUpdate". New callbacks will have this fired the next tick. The function may be called several times
+     * in one tick.
+     * \param aContext The object the callback is owned by.
+     */
     void RegisterAliveCallback(Red::WeakHandle<Red::IScriptable> aContext);
 
     /**

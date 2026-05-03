@@ -22,7 +22,7 @@ protected cb func OnQuickhackStarted(value: ref<RevealInteractionWheel>) -> Bool
 
     let neuroSystem = GameInstance.GetNeuroSystem();
 
-    neuroSystem.OnQuickhackDataProvided(desc);
+    neuroSystem.OnQuickhackDataProvided(desc, false);
 }
 
 @addMethod(GameObject)
@@ -100,10 +100,38 @@ public final func GetQuickhackData() -> [ref<QuickhackData>] {
 }
 
 @addMethod(GameObject)
+public final func GetMaxQuickhackQueueSizeForObject() -> Int32 {
+    let player = GetPlayer(GetGameInstance());
+    let playerStatsObjectId = Cast<StatsObjectID>(player.GetEntityID());
+    let asScriptedPuppet = this as ScriptedPuppet;
+    if IsDefined(asScriptedPuppet) {
+        let queueSize = 1;
+        if QuickHackableQueueHelper.IsQueuePerkBought(player) {
+            queueSize += FloorF(
+                GameInstance
+                    .GetStatsSystem(GetGameInstance())
+                    .GetStatValue(playerStatsObjectId, gamedataStatType.QuickHackQueueSize)
+            );
+        }
+        // Already uploading hacks
+        queueSize -= asScriptedPuppet.GetDeviceActionQueueSize();
+        return queueSize;
+    }
+
+    return 1;
+}
+
+@addMethod(GameObject)
 public final func TranslateQuickhackDataToNeuroDesc(data: [ref<QuickhackData>]) -> ref<NeuroQuickhackDataDto> {
     let hackCount = ArraySize(data);
 
     if hackCount == 0 {
+        return null;
+    }
+
+    let usableHackCount = this.GetMaxQuickhackQueueSizeForObject();
+
+    if usableHackCount <= 0 {
         return null;
     }
 
@@ -121,6 +149,7 @@ public final func TranslateQuickhackDataToNeuroDesc(data: [ref<QuickhackData>]) 
                 false
             )
     );
+    collectedHackData.maxQueueSize = usableHackCount;
 
     let asNPC = this as NPCPuppet;
 
@@ -199,7 +228,7 @@ public final func GetNeuroQuickhackInfo() -> ref<NeuroQuickhackDataDto> {
 public final func GetQuickhackableTargetsForNeuro() -> [ref<NeuroQuickhackDataDto>] {
     let searchQuery: TargetSearchQuery;
 
-    searchQuery.testedSet = TargetingSet.Frustum;
+    searchQuery.testedSet = TargetingSet.Complete;
     searchQuery.includeSecondaryTargets = false;
     searchQuery.filterObjectByDistance = true;
     searchQuery.searchFilter = TSF_Quickhackable();
@@ -245,7 +274,7 @@ public final func GetQuickhackableTargetsForNeuro() -> [ref<NeuroQuickhackDataDt
 
     let max = ArraySize(hackables);
 
-    let MAX_QUICKHACKABLES_FOR_NEURO_GATHER = 20;
+    let MAX_QUICKHACKABLES_FOR_NEURO_GATHER = 12;
     if max > MAX_QUICKHACKABLES_FOR_NEURO_GATHER {
         max = MAX_QUICKHACKABLES_FOR_NEURO_GATHER;
     }
@@ -259,12 +288,37 @@ public final func GetQuickhackableTargetsForNeuro() -> [ref<NeuroQuickhackDataDt
         let info = obj.GetNeuroQuickhackInfo();
 
         if IsDefined(info) {
-            ArrayPush(neuroTargets, info);
+            if info.HasUsableQuickhacks() {
+                ArrayPush(neuroTargets, info);
+            }
         }
 
         i += 1;
     }
 
     return neuroTargets;
+}
+
+@wrapMethod(ScriptedPuppet)
+protected cb func OnNetworkLinkQuickhackEvent(evt: ref<NetworkLinkQuickhackEvent>) -> Bool
+{
+    wrappedMethod(evt);
+
+    if Equals(evt.targetID, GetPlayer(GetGameInstance()).GetEntityID()) {
+        let hasCounterhackPerk = GameInstance.GetStatsSystem(GetGameInstance()).GetStatValue(Cast<StatsObjectID>(evt.targetID), gamedataStatType.RevealNetrunnerWhenHacked) > 0.0;
+        if hasCounterhackPerk {
+            let netrunner = GameInstance.FindEntityByID(GetGameInstance(), evt.netrunnerID);
+            if IsDefined(netrunner) {
+                let netrunnerAsGameObject = netrunner as GameObject;
+
+                if IsDefined(netrunnerAsGameObject) {
+                    let hackData = netrunnerAsGameObject.GetNeuroQuickhackInfo();
+                    if IsDefined(hackData) {
+                        GameInstance.GetNeuroSystem().OnQuickhackDataProvided(hackData, true);
+                    }
+                }
+            }
+        }
+    }
 }
 

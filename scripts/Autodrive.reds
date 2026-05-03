@@ -47,9 +47,10 @@ public cb func OnAICommandStateEvent(ev: ref<AICommandStateEvent>) {
             neuroSystem.SendContext("Autodrive arrived to destination.");
             break;
         case AICommandState.Failure:
-            this.KillNeurodrive(true);
+            // This happens more than expected - do not kill autodrive!
+            // this.KillNeurodrive(true);
             SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveFail");
-            neuroSystem.SendContext("Autodrive failed for unknown reasons.");
+            // neuroSystem.SendContext("Autodrive failed for unknown reasons.");
             break;
         default:
             break;
@@ -133,12 +134,11 @@ public cb func OnJournalTrackedUpdate(
 
     let targetPosition = Vector4.Vector3To4(positions[0]);
 
-    ModLog(n"Neuro", s"Retracking to mappin \(targetPosition)!");
-
     let aiCommand = DriveToPointAutonomousUpdate.MakeNeuroAutodriveData(targetPosition);
 
     this.KillNeurodrive(true);
     this.SetupNeurodrivePointToPoint(aiCommand, false, true);
+    SimpleScreenMessage.DisplayNeuroRelatedOnscreenMsg(n"Neuro-OnAutodriveRetarget");
 }
 
 @addMethod(VehicleObject)

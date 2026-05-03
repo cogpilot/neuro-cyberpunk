@@ -23,6 +23,16 @@ public native class NeuroQuickhackDataDto {
     public native let isInanimate: Bool;
     public native let ramAmount: Int32;
     public native let quickhacks: [ref<NeuroQuickhackDto>];
+    public native let maxQueueSize: Int32;
+
+    public final func HasUsableQuickhacks() -> Bool {
+        for hack in this.quickhacks {
+            if hack.canUse {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 public native class NeuroPhoneMessageDto {
@@ -38,13 +48,15 @@ public native class NeuroSystem extends IGameSystem {
 
     public native func SendContextSilent(msg: String) -> Void;
 
+    public native func SetCombatState(inCombat: Bool) -> Void;
+
     public native func TrackMappin(mappin: ref<IMappin>) -> Void;
 
     public native func InjectKeypressChain(data: [EInputKey]) -> Void;
 
     public native func HasForcedActionCooldown() -> Bool;
 
-    public native func OnQuickhackDataProvided(data: ref<NeuroQuickhackDataDto>);
+    public native func OnQuickhackDataProvided(data: ref<NeuroQuickhackDataDto>, isCounterHack: Bool);
 
     public native func OnSMSMessageDataProvided(data: ref<NeuroPhoneMessageDto>);
 
@@ -67,13 +79,11 @@ public native class NeuroSystem extends IGameSystem {
 
         // Should never happen
         if !IsDefined(player) {
-            ModLog(n"Neuro", "OnConnectedIngame, player puppet is not defined!");
             return;
         }
 
         let puppet = player as PlayerPuppet;
         if !IsDefined(puppet) {
-            ModLog(n"Neuro", "OnConnectedIngame, player puppet is not PlayerPuppet!");
             return;
         }
 
@@ -85,104 +95,43 @@ public native class NeuroSystem extends IGameSystem {
         this.SendContext(this.OnQueryAllQuests());
     }
 
-    public cb func OnQuickhackTarget(entId: EntityID, hackId: Int32) -> String {
-        // Note: could be cool if Neuro could queue multiple quickhacks, but don't see good way to do that yet
+    public cb func OnQuickhackTargetInternal(entId: EntityID, hackId: Int32) -> Bool {
         let ent = GameInstance.FindEntityByID(GetGameInstance(), entId);
 
         if !IsDefined(ent) {
-            return "Failed to find entity!";
+            return false;
         }
 
         let asObject = ent as GameObject;
 
         if !IsDefined(asObject) {
             // Should never happen
-            return "Entity is not game object!";
+            return false;
         }
 
         if !asObject.IsQuickHackAble() {
-            return "Entity cannot be quickhacked!";
+            return false;
         }
 
-        let player = GameInstance.GetPlayerSystem(GetGameInstance()).GetLocalPlayerControlledGameObject() as PlayerPuppet;
-
-        let quickhackActions: [ref<QuickhackData>];
-        // Note: very hacky
-
-        let asDevice = asObject as Device;
-        let asScriptedPuppet = asObject as ScriptedPuppet;
-        let asVehicle = asObject as VehicleObject;
-
-        if IsDefined(asDevice) {
-            if asDevice.m_isQhackUploadInProgerss && !asDevice.IsActionQueueEnabled() || asDevice.IsActionQueueFull() {
-                return "Device is already too hacked!";
-            }
-            let ctx = asDevice
-                .GetDevicePS()
-                .GenerateContext(
-                    gamedeviceRequestType.Remote,
-                    Device.GetInteractionClearance(),
-                    player,
-                    entId
-                );
-
-            let actions: [ref<DeviceAction>];
-            asDevice.GetDevicePS().GetRemoteActions(actions, ctx);
-            QuickHackableHelper
-                .TranslateActionsIntoQuickSlotCommands(actions, quickhackActions, asDevice, asDevice.GetDevicePS());
-        } else if IsDefined(asScriptedPuppet) {
-            let ctx = asScriptedPuppet
-                .GetPS()
-                .GenerateContext(
-                    gamedeviceRequestType.Remote,
-                    Device.GetInteractionClearance(),
-                    player,
-                    entId
-                );
-
-            let actionRecords: [wref<ObjectAction_Record>];
-            let puppetActions: [ref<PuppetAction>];
-
-            asScriptedPuppet.GetRecord().ObjectActions(actionRecords);
-            asScriptedPuppet.GetPS().GetAllChoices(actionRecords, ctx, puppetActions);
-            asScriptedPuppet
-                .TranslateChoicesIntoQuickSlotCommands(puppetActions, quickhackActions);
-        } else if IsDefined(asVehicle) {
-            if asVehicle.m_isQhackUploadInProgress && !asVehicle.IsActionQueueEnabled() || asVehicle.IsActionQueueFull() {
-                return "Vehicle is already too hacked!";
-            }
-
-            let ctx = asVehicle
-                .GetVehiclePS()
-                .GenerateContext(
-                    gamedeviceRequestType.Remote,
-                    Device.GetInteractionClearance(),
-                    player,
-                    entId
-                );
-
-            let actions: [ref<DeviceAction>];
-            asVehicle.GetVehiclePS().GetRemoteActions(actions, ctx);
-
-            QuickHackableHelper
-                .TranslateActionsIntoQuickSlotCommands(actions, quickhackActions, asVehicle, asVehicle.GetVehiclePS());
-        }
+        let quickhackActions = asObject.GetQuickhackData();
 
         let sz = ArraySize(quickhackActions);
 
-        if sz < hackId {
-            return "Quickhack ID no longer present in list!";
+        if hackId >= sz || hackId < 0 {
+            return false;
         }
 
         let hack = quickhackActions[hackId];
 
         if hack.m_isLocked {
-            return "Hack is locked and can\'t be used!";
+            return false;
         }
 
         if NotEquals(hack.m_actionState, EActionInactivityReson.Ready) {
-            return "Hack is not ready for use!";
+            return false;
         }
+
+        let player = GetPlayer(GetGameInstance());
 
         let cmd = new QuickSlotCommandUsed();
         cmd.action = hack.m_action;
@@ -201,15 +150,18 @@ public native class NeuroSystem extends IGameSystem {
                 );
         }
 
-        let title = hack.m_title;
+        let hackName = hack.m_title;
 
-        if StrLen(title) > 0 {
-            // This crashes for some reason, maybe the strlen() check will help?
-            let localized = GetLocalizedText(title);
-            return s"Dispatched quickhack \"\(localized)\" to target!";
+        if IsStringValid(hackName) {
+            let localizedName = GetLocalizedText(hackName);
+
+            if IsStringValid(localizedName) {
+                this
+                    .SendContext(s"Dispatched quickhack \(localizedName) on a target.");
+            }
         }
 
-        return "Dispatched quickhack to target!";
+        return true;
     }
 
     public cb func OnSelectDialogueChoice(id: Int32, out success: Bool) -> String {
@@ -277,10 +229,6 @@ public native class NeuroSystem extends IGameSystem {
             }
         }
 
-        ModLog(
-            n"Neuro",
-            s"Absolute current choice ID: \(currAbsoluteChoiceId), relative: \(currentChoiceId)"
-        );
         let delta = id - currAbsoluteChoiceId;
 
         // Keys are hardcoded, you could try to dynamically resolve actions but NO
@@ -576,6 +524,25 @@ public native class NeuroSystem extends IGameSystem {
         }
 
         return player.GetQuickhackableTargetsForNeuro();
+    }
+
+    public cb func OnGetContactsList() -> String {
+        let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+        let humanContactList = journalManager.GetContactList();
+
+        return StringUtils.BuildString(humanContactList, "\r\n");
+    }
+
+    public cb func OnCallContact(contactName: String) -> String {
+        let journalManager = GameInstance.GetJournalManager(GetGameInstance());
+
+        let returnValue = journalManager.CallContactByName(contactName);
+
+        if returnValue {
+            return "Contact called successfully.";
+        } else {
+            return "Failed to call contact.";
+        }
     }
 
     public func TranslateItemIdToNeuroDesc(owner: ref<PlayerPuppet>, id: ItemID) -> String {
