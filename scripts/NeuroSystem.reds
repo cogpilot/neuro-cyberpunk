@@ -79,13 +79,11 @@ public native class NeuroSystem extends IGameSystem {
 
         // Should never happen
         if !IsDefined(player) {
-            ModLog(n"Neuro", "OnConnectedIngame, player puppet is not defined!");
             return;
         }
 
         let puppet = player as PlayerPuppet;
         if !IsDefined(puppet) {
-            ModLog(n"Neuro", "OnConnectedIngame, player puppet is not PlayerPuppet!");
             return;
         }
 
@@ -231,10 +229,6 @@ public native class NeuroSystem extends IGameSystem {
             }
         }
 
-        ModLog(
-            n"Neuro",
-            s"Absolute current choice ID: \(currAbsoluteChoiceId), relative: \(currentChoiceId)"
-        );
         let delta = id - currAbsoluteChoiceId;
 
         // Keys are hardcoded, you could try to dynamically resolve actions but NO

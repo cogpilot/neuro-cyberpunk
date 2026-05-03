@@ -134,8 +134,6 @@ public cb func OnJournalTrackedUpdate(
 
     let targetPosition = Vector4.Vector3To4(positions[0]);
 
-    ModLog(n"Neuro", s"Retracking to mappin \(targetPosition)!");
-
     let aiCommand = DriveToPointAutonomousUpdate.MakeNeuroAutodriveData(targetPosition);
 
     this.KillNeurodrive(true);

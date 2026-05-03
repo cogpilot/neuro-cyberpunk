@@ -112,10 +112,6 @@ public final func GetMaxQuickhackQueueSizeForObject() -> Int32 {
                     .GetStatsSystem(GetGameInstance())
                     .GetStatValue(playerStatsObjectId, gamedataStatType.QuickHackQueueSize)
             );
-
-            ModLog(n"Neuro", s"Quickhack queue size: \(queueSize) \(GameInstance
-                .GetStatsSystem(GetGameInstance())
-                .GetStatValue(playerStatsObjectId, gamedataStatType.QuickHackQueueSize))");
         }
         // Already uploading hacks
         queueSize -= asScriptedPuppet.GetDeviceActionQueueSize();
