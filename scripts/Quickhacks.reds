@@ -131,7 +131,7 @@ public final func TranslateQuickhackDataToNeuroDesc(data: [ref<QuickhackData>]) 
 
     let usableHackCount = this.GetMaxQuickhackQueueSizeForObject();
 
-    if usableHackCount < 0 {
+    if usableHackCount <= 0 {
         return null;
     }
 
