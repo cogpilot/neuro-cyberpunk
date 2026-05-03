@@ -1259,172 +1259,163 @@ void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo, JobQueue& aJobQ
     if (!m_quickhackCacheUpdateInProgress)
     {
         // Gather targets for cache scan
-        aJobQueue.Dispatch(
-            [this]()
+
+        util::Timestamp startTime{};
+
+        auto playerSystem = GetGameSystem<cp::PlayerSystem>();
+
+        Handle<game::Object> playerPuppet{};
+
+        shared::raw::PlayerSystem::GetPlayerControlledGameObject(playerSystem, playerPuppet);
+
+        if (!playerPuppet)
+        {
+            return;
+        }
+
+        auto targetingSystem = GetGameSystem<game::targeting::TargetingSystem>();
+
+        game::TargetSearchQuery query{};
+
+        query.testedSet = game::TargetingSet::Complete;
+        query.ignoreInstigator = true;
+        query.filterObjectByDistance = true;
+        query.maxDistance = 40.0f;
+
+        shared::raw::TargetSearchQuery::ComponentSearchFilter::Set(
+            &query, (std::uint16_t)(game::targeting::SystemScriptFilter::QuickHack));
+
+        DynArray<TS_TargetPartInfo> partInfoArray{};
+
+        WeakHandle<game::Object> playerPuppetWeak = playerPuppet;
+
+        shared::raw::TargetingSystem::GetTargetParts(targetingSystem, playerPuppetWeak, query, partInfoArray);
+
+        struct TargetInfoSortStruct
+        {
+            Handle<game::Object> m_target;
+            float m_distanceFromCrosshair;
+        };
+
+        std::vector<TargetInfoSortStruct> targetInfoList;
+
+        for (auto& i : partInfoArray)
+        {
+            std::uint8_t index = shared::raw::TS_TargetPartInfo::PartIndex::Ref(&i);
+
+            if (index == 0xFF)
             {
-                util::Timestamp startTime{};
+                continue;
+            }
 
-                auto playerSystem = GetGameSystem<cp::PlayerSystem>();
+            auto partTable = shared::raw::TS_TargetPartInfo::PartTable::Ref(&i);
+            auto targetEntry = shared::raw::TS_TargetPartInfo::TargetEntry::Ref(&i);
 
-                Handle<game::Object> playerPuppet{};
+            if (!partTable || !targetEntry)
+            {
+                continue;
+            }
 
-                shared::raw::PlayerSystem::GetPlayerControlledGameObject(playerSystem, playerPuppet);
+            auto& component = shared::raw::TS_TargetPartInfo::TargetEntryComponentList::Ptr(targetEntry)[index];
 
-                if (!playerPuppet)
+            if (auto locked = component.m_component.Lock())
+            {
+                if (Handle<game::Object> owner = Cast<game::Object>(AsHandle(locked->owner)))
                 {
-                    return;
-                }
+                    auto angles = shared::raw::TS_TargetPartInfo::ResolvePartAngleEntry(partTable, index);
 
-                auto targetingSystem = GetGameSystem<game::targeting::TargetingSystem>();
-
-                game::TargetSearchQuery query{};
-
-                query.testedSet = game::TargetingSet::Complete;
-                query.ignoreInstigator = true;
-                query.filterObjectByDistance = true;
-                query.maxDistance = 40.0f;
-
-                shared::raw::TargetSearchQuery::ComponentSearchFilter::Set(
-                    &query, (std::uint16_t)(game::targeting::SystemScriptFilter::QuickHack));
-
-                DynArray<TS_TargetPartInfo> partInfoArray{};
-
-                WeakHandle<game::Object> playerPuppetWeak = playerPuppet;
-
-                shared::raw::TargetingSystem::GetTargetParts(targetingSystem, playerPuppetWeak, query, partInfoArray);
-
-                struct TargetInfoSortStruct
-                {
-                    Handle<game::Object> m_target;
-                    float m_distanceFromCrosshair;
-                };
-
-                std::vector<TargetInfoSortStruct> targetInfoList;
-
-                for (auto& i : partInfoArray)
-                {
-                    std::uint8_t index = shared::raw::TS_TargetPartInfo::PartIndex::Ref(&i);
-
-                    if (index == 0xFF)
+                    if (!angles)
                     {
                         continue;
                     }
 
-                    auto partTable = shared::raw::TS_TargetPartInfo::PartTable::Ref(&i);
-                    auto targetEntry = shared::raw::TS_TargetPartInfo::TargetEntry::Ref(&i);
+                    auto fov = std::hypotf(angles->m_pitch, angles->m_yaw);
 
-                    if (!partTable || !targetEntry)
-                    {
-                        continue;
-                    }
-
-                    auto& component = shared::raw::TS_TargetPartInfo::TargetEntryComponentList::Ptr(targetEntry)[index];
-
-                    if (auto locked = component.m_component.Lock())
-                    {
-                        if (Handle<game::Object> owner = Cast<game::Object>(AsHandle(locked->owner)))
-                        {
-                            auto angles = shared::raw::TS_TargetPartInfo::ResolvePartAngleEntry(partTable, index);
-
-                            if (!angles)
-                            {
-                                continue;
-                            }
-
-                            auto fov = std::hypotf(angles->m_pitch, angles->m_yaw);
-
-                            targetInfoList.push_back({owner, fov});
-                        }
-                    }
+                    targetInfoList.push_back({owner, fov});
                 }
+            }
+        }
 
-                if (targetInfoList.empty())
-                {
-                    return;
-                }
+        if (targetInfoList.empty())
+        {
+            return;
+        }
 
-                std::sort(targetInfoList.begin(), targetInfoList.end(),
-                          [](const TargetInfoSortStruct& a, const TargetInfoSortStruct& b)
-                          { return a.m_distanceFromCrosshair < b.m_distanceFromCrosshair; });
+        std::sort(targetInfoList.begin(), targetInfoList.end(),
+                  [](const TargetInfoSortStruct& a, const TargetInfoSortStruct& b)
+                  { return a.m_distanceFromCrosshair < b.m_distanceFromCrosshair; });
 
-                std::unique_lock lock(m_quickhackCacheLock);
+        m_workInProgressQuickhackDataCache.clear();
+        m_quickhackCacheProcessedObjects.clear();
 
-                m_workInProgressQuickhackDataCache.clear();
-                m_quickhackCacheProcessedObjects.clear();
+        // We don't really need to limit target number if it's one per frame
+        for (auto& i : targetInfoList)
+        {
+            m_quickhackCacheProcessedObjects.push_back(i.m_target);
+        }
 
-                // We don't really need to limit target number if it's one per frame
-                for (auto& i : targetInfoList)
-                {
-                    m_quickhackCacheProcessedObjects.push_back(i.m_target);
-                }
+        m_quickhackCacheUpdateInProgress = true;
 
-                m_quickhackCacheUpdateInProgress = true;
+        Context::Spew("{} ms to gather {} quickhackable targets for cache update.", startTime.TimePassedMs().count(),
+                      m_quickhackCacheProcessedObjects.size());
 
-                Context::Spew("{} ms to gather {} quickhackable targets for cache update.",
-                              startTime.TimePassedMs().count(), m_quickhackCacheProcessedObjects.size());
-            });
         return;
     }
 
     // Gather one target per frame
     // Note: doing it this way may cause issues with inconsistent RAM state and whatnot between targets
     // But whatever
-    aJobQueue.Dispatch(
-        [this]()
+
+    // Done with cache update
+    if (m_quickhackCacheProcessedObjects.empty())
+    {
+        m_quickhackDataCache = std::move(m_workInProgressQuickhackDataCache);
+        m_quickhackIsFirstCacheUse = true; // Needed for tester
+        m_quickhackCacheUpdateInProgress = false;
+        m_timeUntilNextQuickhackCacheUpdate = QuickhackCacheUpdateDelay;
+        m_workInProgressQuickhackDataCache.clear();
+
+        return;
+    }
+
+    util::Timestamp startTime{};
+
+    WeakHandle<game::Object> weakTarget = m_quickhackCacheProcessedObjects.back();
+    m_quickhackCacheProcessedObjects.pop_back();
+
+    if (auto target = weakTarget.Lock())
+    {
+        Handle<Impl::NeuroQuickhackDataDto> returnValue{};
+
+        if (!CallVirtual(target, "GetNeuroQuickhackInfo", returnValue))
         {
-            std::unique_lock lock(m_quickhackCacheLock);
+            return;
+        }
+        if (returnValue)
+        {
+            auto hasUsableHacks = false;
 
-            // Done with cache update
-            if (m_quickhackCacheProcessedObjects.empty())
+            for (auto& i : returnValue->m_quickhacks)
             {
-                m_quickhackDataCache = std::move(m_workInProgressQuickhackDataCache);
-                m_quickhackIsFirstCacheUse = true; // Needed for tester
-                m_quickhackCacheUpdateInProgress = false;
-                m_timeUntilNextQuickhackCacheUpdate = QuickhackCacheUpdateDelay;
-                m_workInProgressQuickhackDataCache.clear();
+                if (i->m_canUse)
+                {
+                    hasUsableHacks = true;
+                    break;
+                }
+            }
 
+            if (!hasUsableHacks)
+            {
                 return;
             }
 
-            util::Timestamp startTime{};
+            m_workInProgressQuickhackDataCache.push_back(returnValue);
+        }
 
-            WeakHandle<game::Object> weakTarget = m_quickhackCacheProcessedObjects.back();
-            m_quickhackCacheProcessedObjects.pop_back();
-
-            if (auto target = weakTarget.Lock())
-            {
-                Handle<Impl::NeuroQuickhackDataDto> returnValue{};
-
-                if (!CallVirtual(target, "GetNeuroQuickhackInfo", returnValue))
-                {
-                    return;
-                }
-                if (returnValue)
-                {
-                    auto hasUsableHacks = false;
-
-                    for (auto& i : returnValue->m_quickhacks)
-                    {
-                        if (i->m_canUse)
-                        {
-                            hasUsableHacks = true;
-                            break;
-                        }
-                    }
-
-                    if (!hasUsableHacks)
-                    {
-                        return;
-                    }
-
-                    m_workInProgressQuickhackDataCache.push_back(returnValue);
-                }
-
-                Context::Spew("{} ms to gather quickhack info for target {:016x}, {} entries in cache so far.",
-                              startTime.TimePassedMs().count(), target->entityID.hash,
-                              m_workInProgressQuickhackDataCache.size());
-            }
-        });
+        Context::Spew("{} ms to gather quickhack info for target {:016x}, {} entries in cache so far.",
+                      startTime.TimePassedMs().count(), target->entityID.hash,
+                      m_workInProgressQuickhackDataCache.size());
+    }
 }
 
 void mod::NeuroSystem::TickFuzzer(JobQueue& aQueue)
@@ -1815,21 +1806,21 @@ void mod::NeuroSystem::OnSMSMessageDataProvided(Handle<Impl::NeuroPhoneMessageDt
 
     m_actionMessengerDialogViewController = aMessageInfo->m_messageController;
 
-    // Zero out to not make Neuro confused/break serializer
-    aMessageInfo->m_messageController = nullptr;
-
     auto msg = MakeHandle<NeuroForcedActionMessage>();
 
     msg->m_query = "You have options to reply to a phone message. The choices are provided in the action context. If "
                    "you do not wish to reply to the message, pass -1 as the message ID.";
 
-    shared::raw::JSON::Serializer serializer{aMessageInfo};
+    auto fromGame = Impl::JSON::NeuroSMSJson::FromGame(aMessageInfo);
 
-    if (!serializer.Serialize(msg->m_state))
+    auto jsonResult = glz::write_json(fromGame);
+
+    if (!jsonResult)
     {
         return;
     }
 
+    msg->m_state = jsonResult.value().c_str();
     msg->m_actionName = "select_sms_message_choice";
 
     AddMessage(msg);
