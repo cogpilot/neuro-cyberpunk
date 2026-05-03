@@ -117,7 +117,7 @@ public native class NeuroSystem extends IGameSystem {
 
         let sz = ArraySize(quickhackActions);
 
-        if sz < hackId {
+        if hackId >= sz || hackId < 0 {
             return false;
         }
 

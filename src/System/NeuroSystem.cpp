@@ -1382,7 +1382,7 @@ void mod::NeuroSystem::TickQuickhackCache(FrameInfo& aFrameInfo, JobQueue& aJobQ
                 m_quickhackCacheUpdateInProgress = false;
                 m_timeUntilNextQuickhackCacheUpdate = QuickhackCacheUpdateDelay;
                 m_workInProgressQuickhackDataCache.clear();
-                
+
                 return;
             }
 
@@ -1860,7 +1860,7 @@ void mod::NeuroSystem::UnregisterAliveCallback(WeakHandle<IScriptable> aContext)
 {
     std::unique_lock lock(m_callbackLock);
     // m_newCallbackList does not need remove here, because it will get trimmed down anyway
-    std::erase_if(m_newCallbackList,
+    std::erase_if(m_callbackList,
                   [&aContext](const WeakHandle<IScriptable>& i) { return i.instance == aContext.instance; });
 }
 
